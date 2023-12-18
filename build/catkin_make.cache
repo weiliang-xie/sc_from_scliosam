@@ -1,0 +1,2 @@
+scloopclosure
+-DCATKIN_DEVEL_PREFIX=/home/jtcx/remote_control/code/sc_from_scliosam/devel -DCMAKE_INSTALL_PREFIX=/home/jtcx/remote_control/code/sc_from_scliosam/install -G Unix Makefiles

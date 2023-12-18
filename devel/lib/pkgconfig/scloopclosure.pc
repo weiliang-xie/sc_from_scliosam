@@ -1,0 +1,8 @@
+prefix=/home/jtcx/remote_control/code/sc_from_scliosam/devel
+
+Name: scloopclosure
+Description: Description of scloopclosure
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 
