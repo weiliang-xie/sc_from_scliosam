@@ -7,6 +7,4 @@
 # new environment variables
 
 # modified environment variables
-export PKG_CONFIG_PATH="/home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/pkgconfig:$PKG_CONFIG_PATH"
 export PWD='/home/jtcx/remote_control/code/sc_from_scliosam/build'
-export PYTHONPATH="/home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/python3/dist-packages:$PYTHONPATH"

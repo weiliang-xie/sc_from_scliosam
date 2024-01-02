@@ -70,8 +70,8 @@ scloopclosure/CMakeFiles/lio_sam_generate_messages_cpp: /home/jtcx/remote_contro
 
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/lib/gencpp/gen_cpp.py
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/msg/cloud_info.msg
-/home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/share/sensor_msgs/msg/PointCloud2.msg
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/share/sensor_msgs/msg/PointField.msg
+/home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/share/sensor_msgs/msg/PointCloud2.msg
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/share/std_msgs/msg/Header.msg
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h: /opt/ros/noetic/share/gencpp/msg.h.template
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --blue --bold --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating C++ code from lio_sam/cloud_info.msg"

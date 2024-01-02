@@ -19,6 +19,8 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/PointCloud.h>
+#include <sensor_msgs/point_cloud_conversion.h>
 
 namespace lio_sam
 {

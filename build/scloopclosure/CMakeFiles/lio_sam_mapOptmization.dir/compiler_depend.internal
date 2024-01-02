@@ -4994,6 +4994,8 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o
  /opt/ros/noetic/include/tf2_ros/transform_broadcaster.h
  /usr/include/c++/9/thread
  /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h
+ /opt/ros/noetic/include/sensor_msgs/point_cloud_conversion.h
+ /opt/ros/noetic/include/sensor_msgs/point_field_conversion.h
  /usr/local/include/gtsam/geometry/Rot3.h
  /usr/local/include/gtsam/geometry/Unit3.h
  /usr/local/include/gtsam/geometry/Point2.h

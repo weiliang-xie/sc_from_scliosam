@@ -4992,6 +4992,8 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o: /h
   /opt/ros/noetic/include/tf2_ros/transform_broadcaster.h \
   /usr/include/c++/9/thread \
   /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h \
+  /opt/ros/noetic/include/sensor_msgs/point_cloud_conversion.h \
+  /opt/ros/noetic/include/sensor_msgs/point_field_conversion.h \
   /usr/local/include/gtsam/geometry/Rot3.h \
   /usr/local/include/gtsam/geometry/Unit3.h \
   /usr/local/include/gtsam/geometry/Point2.h \
@@ -5819,8 +5821,6 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o: /h
 
 /usr/local/include/gtsam/base/ThreadsafeException.h:
 
-/usr/local/include/gtsam/linear/linearExceptions.h:
-
 /usr/include/boost/config/warning_disable.hpp:
 
 /usr/include/boost/timer/timer.hpp:
@@ -5958,6 +5958,10 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o: /h
 /usr/local/include/gtsam/geometry/Point2.h:
 
 /usr/local/include/gtsam/geometry/Rot3.h:
+
+/usr/local/include/gtsam/linear/linearExceptions.h:
+
+/opt/ros/noetic/include/sensor_msgs/point_field_conversion.h:
 
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/include/lio_sam/cloud_info.h:
 
@@ -7264,6 +7268,8 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o: /h
 /usr/include/boost/bimap/detail/generate_view_binder.hpp:
 
 /usr/include/boost/smart_ptr/intrusive_ptr.hpp:
+
+/opt/ros/noetic/include/sensor_msgs/point_cloud_conversion.h:
 
 /usr/include/boost/core/scoped_enum.hpp:
 

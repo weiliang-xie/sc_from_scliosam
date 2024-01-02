@@ -172,10 +172,10 @@ public:
         nh.param<float>("lio_sam/poseCovThreshold", poseCovThreshold, 25.0);
 
         nh.param<bool>("lio_sam/savePCD", savePCD, false);
-        nh.param<std::string>("lio_sam/savePCDDirectory", savePCDDirectory, "/Downloads/LOAM/");
+        nh.param<std::string>("lio_sam/savePCDDirectory", savePCDDirectory, "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAM");
 
         std::string sensorStr;
-        nh.param<std::string>("lio_sam/sensor", sensorStr, "");
+        nh.param<std::string>("lio_sam/sensor", sensorStr, "velodyne");
         if (sensorStr == "velodyne")
         {
             sensor = SensorType::VELODYNE;
@@ -210,10 +210,10 @@ public:
         nh.param<vector<double>>("lio_sam/extrinsicRot", extRotV, vector<double>());
         nh.param<vector<double>>("lio_sam/extrinsicRPY", extRPYV, vector<double>());
         nh.param<vector<double>>("lio_sam/extrinsicTrans", extTransV, vector<double>());
-        extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
-        extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
-        extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
-        extQRPY = Eigen::Quaterniond(extRPY);
+        // extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+        // extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
+        // extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+        // extQRPY = Eigen::Quaterniond(extRPY);
 
         nh.param<float>("lio_sam/edgeThreshold", edgeThreshold, 0.1);
         nh.param<float>("lio_sam/surfThreshold", surfThreshold, 0.1);

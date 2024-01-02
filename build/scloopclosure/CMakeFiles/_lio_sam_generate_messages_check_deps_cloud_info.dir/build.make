@@ -67,7 +67,7 @@ include scloopclosure/CMakeFiles/_lio_sam_generate_messages_check_deps_cloud_inf
 include scloopclosure/CMakeFiles/_lio_sam_generate_messages_check_deps_cloud_info.dir/progress.make
 
 scloopclosure/CMakeFiles/_lio_sam_generate_messages_check_deps_cloud_info:
-	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && ../catkin_generated/env_cached.sh /usr/bin/python3 /opt/ros/noetic/share/genmsg/cmake/../../../lib/genmsg/genmsg_check_deps.py lio_sam /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/msg/cloud_info.msg sensor_msgs/PointCloud2:sensor_msgs/PointField:std_msgs/Header
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && ../catkin_generated/env_cached.sh /usr/bin/python3 /opt/ros/noetic/share/genmsg/cmake/../../../lib/genmsg/genmsg_check_deps.py lio_sam /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/msg/cloud_info.msg sensor_msgs/PointField:sensor_msgs/PointCloud2:std_msgs/Header
 
 _lio_sam_generate_messages_check_deps_cloud_info: scloopclosure/CMakeFiles/_lio_sam_generate_messages_check_deps_cloud_info
 _lio_sam_generate_messages_check_deps_cloud_info: scloopclosure/CMakeFiles/_lio_sam_generate_messages_check_deps_cloud_info.dir/build.make

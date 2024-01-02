@@ -135,7 +135,7 @@ std::pair<double, int> SCManager::distanceBtnScanContext( MatrixXd &_sc1, Matrix
     for ( int num_shift: shift_idx_search_space )
     {
         MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
-        double cur_sc_dist = distDirectSC( _sc1, sc2_shifted ); //计算相似度，需要结合论文公式
+        double cur_sc_dist = distDirectSC( _sc1, sc2_shifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
         if( cur_sc_dist < min_sc_dist )
         {
             argmin_shift = num_shift;
