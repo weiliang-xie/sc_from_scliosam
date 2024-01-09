@@ -212,6 +212,17 @@ public:
     std::string saveSCDDirectory;
     std::string saveNodePCDDirectory;
 
+    //xwl 修改添加
+    int16_t laser_cloud_frame_number;   //实时更新的当前帧id
+    Eigen::MatrixXd sc_pose_origin;
+    Eigen::MatrixXd sc_pose_change;
+    std::vector<Eigen::Matrix4d> pose_ground_truth;
+    std::vector<Eigen::Matrix4d> pose_final_change;
+    pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
+    std::vector<int> loopclosure_gt_index;  //回环真值id队列
+    ofstream prFile;                                                    //pr文件流定义
+    string pr_data_file = savePCDDirectory + "PRcurve/kitti_00.csv";    //pr数据储存地址
+
 public:
     mapOptimization()
     {
@@ -227,7 +238,7 @@ public:
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
 
         // subCloud = nh.subscribe<lio_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
-        subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/lidar_points", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
+        subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
         subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("lio_loop/loop_closure_detection", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
 
@@ -254,7 +265,6 @@ public:
         // giseop
         // create directory and remove old files;
         // savePCDDirectory = std::getenv("HOME") + savePCDDirectory; // rather use global path 
-        cout <<  "xwl " << savePCDDirectory << endl;
         int unused = system((std::string("exec rm -r ") + savePCDDirectory).c_str());
         unused = system((std::string("mkdir ") + savePCDDirectory).c_str());
 
@@ -270,6 +280,11 @@ public:
         pgTimeSaveStream = std::fstream(savePCDDirectory + "times.txt", std::fstream::out); pgTimeSaveStream.precision(dbl::max_digits10);
         // pgVertexSaveStream = std::fstream(savePCDDirectory + "singlesession_vertex.g2o", std::fstream::out);
         // pgEdgeSaveStream = std::fstream(savePCDDirectory + "singlesession_edge.g2o", std::fstream::out);
+
+        laser_cloud_frame_number = 0;
+
+        getposegroundtruth();   //获取序列的pose真值
+        getloopclosuregt();     //获取回环真值
 
     }
 
@@ -313,6 +328,8 @@ public:
         kdtreeCornerFromMap.reset(new pcl::KdTreeFLANN<PointType>());
         kdtreeSurfFromMap.reset(new pcl::KdTreeFLANN<PointType>());
 
+        cloudkey.reset(new pcl::PointCloud<PointTypePose>());
+
         for (int i = 0; i < 6; ++i){
             transformTobeMapped[i] = 0;
         }
@@ -350,6 +367,294 @@ public:
         edges_str.emplace_back(curEdgeInfo);    //与push_back()基本一致
     }
 
+    //获取pose真值
+    void getposegroundtruth()
+    {
+
+        const char *fileName = "/home/jtcx/data_set/kitti/data_odometry/dataset/poses/00.txt";
+    
+        std::ifstream fileStream;
+        std::string buf;
+        float temp;
+        int j,k,l;
+        fileStream.open(fileName, std::ios::in);//ios::in 表示以只读的方式读取文件
+    
+        if (fileStream.fail())//文件打开失败:返回0
+        {
+            cout << "open pose file fail!" << endl;
+        } else//文件存在
+        {
+            while (getline(fileStream, buf, '\n'))//读取一行
+            {
+                k = 0;
+                // j = 0;
+                // l = 0;
+                int index = 0;
+                Eigen::Matrix4d tmpV;
+
+                for (int i = 0; i < int(buf.size()); i++) {
+                    if (buf[i] == ' ' || buf[i] == '\n' || i == buf.size() - 1) {
+                        if(i == buf.size() - 1) i++;
+                        temp = stod(buf.substr(k, i-k));
+
+                        tmpV((index/4),(index%4)) = temp;
+                        index++;
+                        if(index == 12-1)
+                        {
+                            tmpV(3,0) = 0.0;
+                            tmpV(3,1) = 0.0;
+                            tmpV(3,2) = 0.0;
+                            tmpV(3,3) = 1.0;
+                        }
+
+                        k = i + 1;
+                    }
+                }
+                // cout << "matrix: \r\n" << tmpV << endl;
+                pose_ground_truth.push_back(tmpV);
+                tmpV.setZero();
+            }
+            fileStream.close();
+        }
+
+    }
+
+    /*xwl 位姿转换 
+    输入描述符的原始点云序号和旋转偏移量（弧度）
+    输出位姿矩阵*/
+    void changeSCpose(int16_t cloud_frame_index, float yawdata)
+    {
+        Eigen::Matrix4d last_offset_pose;
+        //制作旋转偏移矩阵
+        Eigen::Matrix4d rotate_offset;
+        rotate_offset << cos(yawdata),-sin(yawdata),0.0,0.0,
+                         sin(yawdata),cos(yawdata),0.0,0.0,
+                         0.0,0.0,1.0,1.0;
+        cout << "xwl rotate offset matrix: \r\n" << rotate_offset << endl;
+        last_offset_pose = rotate_offset * pose_ground_truth[cloud_frame_index];
+        cout << "xwl change final matrix: \r\n" << last_offset_pose << endl;
+        pose_final_change.push_back(last_offset_pose);
+    }
+
+    //获取回环gt 通过位置距离判断，与非前后50帧内的距离小于10m则为回环
+    void getloopclosuregt(void)
+    {
+        
+        for(auto it = pose_ground_truth.begin(); it != pose_ground_truth.end(); it++)
+        {
+            int cur_index = static_cast<int>(it - pose_ground_truth.begin());
+            // cout << "cur index: " << cur_index << endl;
+            if(cur_index < 50) continue;  //前50帧不进行回环判断
+            Eigen::Matrix4d pose_matrix;
+            double distance = 0;
+            double cur_x, cur_y, cur_z;
+
+            pose_matrix = *it;
+            cur_x = pose_matrix(0,3);
+            cur_y = pose_matrix(2,3);
+            cur_z = pose_matrix(1,3);
+
+            for(int i = 0; i < cur_index - 50; i++)
+            {
+                double his_x, his_y, his_z;
+                his_x = pose_ground_truth[i](0,3);
+                his_y = pose_ground_truth[i](2,3);
+                his_z = pose_ground_truth[i](1,3);
+
+                // distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y) + (his_z-cur_z)*(his_z-cur_z));
+                distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
+                // cout << "cur and his distance: " << distance << endl;
+                if (distance <= 10)
+                {
+                    loopclosure_gt_index.push_back(cur_index);
+                    break; 
+                }
+            }
+        }
+        cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
+        cout << "finish get loop closure gt" << endl;
+    }
+
+    /*回环PR计算
+      输入： 
+      输出： PR值*/
+    void makeprcurvedata()
+    {
+        std::vector<std::pair<double,double>> pr_data_queue;
+        int tp,fp,fn,pre_loop_num;
+        double presession, recall;
+        double value;
+        double min_dist = 100000;
+        double max_dist = 0.00001;
+        tp = 0;
+        fp = 0;
+        fn = 0;
+        pre_loop_num = 0;
+
+        //寻找dist最大值 最小值
+        for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+        {
+            min_dist = pre_pair->second < min_dist ? pre_pair->second : min_dist;
+            max_dist = pre_pair->second > max_dist ? pre_pair->second : max_dist;
+        }
+
+        cout << "predict loop closure num is        " << scManager.loopclosure_id_and_dist.size() << endl;
+        cout << "predict origin loop closure num is " << scManager.context_origin_index.size() << endl;
+
+
+        cout << "min distance is: " << min_dist << "    max distance is: " << max_dist <<endl;
+
+        //将dist划分出20个阈值
+        for(value = min_dist + (max_dist-min_dist)/20; value <= max_dist; value += (max_dist-min_dist)/20)
+        {
+            cout << "value is: " << value << endl;
+            for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+            {
+                if(pre_pair->second <= value)
+                {
+                    pre_loop_num++;
+                    // cout << "pre_pair_index: " << pre_pair->first << " is loop frame" << endl;
+                    for(auto gt_it = loopclosure_gt_index.begin(); gt_it != loopclosure_gt_index.end(); ++gt_it)
+                    {
+                        if(*gt_it == pre_pair->first)
+                        {
+                            tp++;
+                            break;
+                        }
+                            
+                        if(gt_it == loopclosure_gt_index.end() - 1)
+                            fp++;
+                    }                    
+                } 
+            }
+
+            fn = loopclosure_gt_index.size() - tp;
+
+            cout << "tp: " << tp << "   fp: " << fp << endl;
+            cout << "loop closure pre num:  " << pre_loop_num << endl;
+
+            presession = (static_cast<double>(tp)/(tp + fn));
+            recall = (static_cast<double>(tp)/(tp + fp));
+            tp = 0;
+            fp = 0;
+            pre_loop_num = 0;
+
+            std::pair<double,double> pr_data = {recall,presession};
+            pr_data_queue.push_back(pr_data);
+
+            cout << "presession: " << presession << "   recall: " << recall << endl;
+
+        }
+            cout << "all cloud frame num:   " << laser_cloud_frame_number << endl;
+            cout << "loop closure gt num:   " << loopclosure_gt_index.size() << endl; 
+
+
+        //写入csv文件
+        prFile.open(pr_data_file, ios::out);
+        // 写入标题行
+        prFile << "recall" << ',' << "presession" << endl;
+
+        for(auto prdata = pr_data_queue.begin(); prdata != pr_data_queue.end(); ++prdata)
+        {
+            prFile << prdata->first << "," << prdata->second << endl;
+        }
+        prFile.close();
+    }
+
+
+
+    //xwl 位姿对比 比较真值与描述符估计值的旋转变量之间的误差
+    // void 
+
+    // // 旋转矩阵转换成欧拉角,未完成
+    // // Checks if a matrix is a valid rotation matrix.
+    // bool isRotationMatrix(Eigen::Matrix4d R)
+    // {
+    //     Eigen::Matrix4d Rt;
+    //     Rt = R.transpose();
+    //     Eigen::Matrix4d shouldBeIdentity = Rt * R;
+    //     Mat I = Mat::eye(3,3, shouldBeIdentity.type());
+
+    //     return  norm(I, shouldBeIdentity) < 1e-6;
+
+    // }
+
+    // // Calculates rotation matrix to euler angles
+    // // The result is the same as MATLAB except the order
+    // // of the euler angles ( x and z are swapped ).
+    // Vec3f rotationMatrixToEulerAngles(Eigen::Matrix4d R)
+    // {
+
+    //     assert(isRotationMatrix(R));
+
+    //     float sy = sqrt(R(0,0) * RAD2DEG(0,0) +  R(1,0) * R(1,0) );
+
+    //     bool singular = sy < 1e-6; // If
+
+    //     float x, y, z;
+    //     if (!singular)
+    //     {
+    //         x = atan2(R(2,1) , R(2,2));
+    //         y = atan2(-R(2,0), sy);
+    //         z = atan2(R(1,0), R(0,0));
+    //     }
+    //     else
+    //     {
+    //         x = atan2(-R(1,2), R(1,1));
+    //         y = atan2(-R(2,0), sy);
+    //         z = 0;
+    //     }
+    //     return Vec3f(x, y, z);   
+    // }
+
+    //更新路径
+    void updataposepath(Eigen::Matrix4d pose)
+    {
+        PointTypePose pose_truth;
+        //平移
+        pose_truth.x = pose(0,3);
+        pose_truth.y = pose(2,3);
+        pose_truth.z = -pose(1,3);  
+        // cout << "pose truth x: " << pose_truth.x << 
+        //         "pose truth y: " << pose_truth.y << 
+        //         "pose truth z: " << pose_truth.z << endl;
+        pose_truth.pitch = 0.0;
+        pose_truth.roll = 0.0;
+        pose_truth.yaw = 0.0;
+
+        //旋转
+        // rotationMatrixToEulerAngles();
+
+
+        updatePath(pose_truth);
+    }
+
+
+    // /*xwl 合并pose和点云 PointTypePose 到底是什么类型的结构体,目前发现没有合并pose和点云的必要
+    // */
+    // pcl::PointCloud<PointTypePose>::Ptr mergeposecloud(Eigen::Matrix4d pose,pcl::PointCloud<PointType>::Ptr cloudIn)
+    // {
+    //     pcl::PointCloud<PointTypePose>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+
+    //     PointType *pointFrom;
+
+    //     int cloudSize = cloudIn->size();
+    //     cloudOut->resize(cloudSize);
+    //     // #pragma omp parallel for num_threads(numberOfCores)
+    //     for (int i = 0; i < cloudSize; ++i)
+    //     {
+    //         pointFrom = &cloudIn->points[i];
+    //         cloudOut->points[i].x = pointFrom->x;
+    //         cloudOut->points[i].y = pointFrom->y;
+    //         cloudOut->points[i].z = pointFrom->z;
+    //         cloudOut->points[i].intensity = pointFrom->intensity;
+    //     }
+
+    //     cloudOut->
+    //     return cloudOut;
+    // }
+
+
     // void writeEdgeStr(const std::pair<int, int> _node_idx_pair, const gtsam::Pose3& _relPose, const gtsam::SharedNoiseModel _noise)
     // {
     //     gtsam::Point3 t = _relPose.translation();
@@ -366,7 +671,7 @@ public:
     // void laserCloudInfoHandler(const lio_sam::cloud_infoConstPtr& msgIn)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     void laserCloudInfoHandler(const sensor_msgs::PointCloud2ConstPtr& msg)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     {
-        cout << "xwl receive point cloud data" << endl;
+        // cout << "xwl receive point cloud data" << endl;
         // extract time stamp
         timeLaserInfoStamp = msg->header.stamp;   //点云时间戳
         timeLaserInfoCur = msg->header.stamp.toSec(); //转换成秒为单位
@@ -378,31 +683,52 @@ public:
         // pcl::fromROSMsg(msgIn->cloud_surface, *laserCloudSurfLast);
         pcl::fromROSMsg(*msg, *laserCloudRaw); // giseop    //*将接收到的点云转换成laserCloudRaw
         laserCloudRawTime = cloudinfo_new.header.stamp.toSec(); // giseop save node time
+        laser_cloud_frame_number++;
+        // cout << "xwl receive time is " << laserCloudRawTime << "    frame number is " << laser_cloud_frame_number << endl;
+
+        // static tf    发布odom坐标系
+        static tf::TransformBroadcaster tfMap2Odom;
+        static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
+        tfMap2Odom.sendTransform(tf::StampedTransform(map_to_odom, msg->header.stamp, mapFrame, odometryFrame));
+
+        //更新路径
+        updataposepath(pose_ground_truth[laser_cloud_frame_number]);
 
         std::lock_guard<std::mutex> lock(mtx);  //开启互斥锁 lock_guard互斥锁的一种写法，在构造函数内加锁，析构函数中自动解锁
 
         static double timeLastProcessing = -1;
-        if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)    //判断接收点云的间隔有没有大于映射间隔
+        // if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)    //判断接收点云的间隔有没有大于映射间隔
         {
-            std::cout << "xwl enter deal function" << std::endl;
+            // std::cout << "xwl enter deal function" << std::endl;
             timeLastProcessing = timeLaserInfoCur;
             
             // updateInitialGuess();
 
             // extractSurroundingKeyFrames();
 
-            downsampleCurrentScan();    //降采样处理
+            // downsampleCurrentScan();    //降采样处理
 
             // scan2MapOptimization(); //这个不是SC的优化处理模块
 
             saveKeyFramesAndFactor();   //求解描述符并更新位姿信息
 
             // correctPoses();
+            performSCLoopClosure();      //求解回环状态
 
             // publishOdometry();
 
-            publishFrames();
+            publishFrames();             //发布路径
+
+
         }
+
+        laserCloudRaw->points.clear();
+        // if(laserCloudRaw->points.empty())
+        //     cout << "laser cloud is empty!" << endl;    //有效        
+
+        //接收完数据后进行pr计算
+        if(laser_cloud_frame_number == 4541)
+            makeprcurvedata();
     }
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
@@ -418,6 +744,7 @@ public:
         po->intensity = pi->intensity;
     }
 
+    //使用转换矩阵转换点云
     pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
@@ -502,7 +829,7 @@ public:
     //     // pgEdgeSaveStream.close();
 
     //     const std::string kitti_format_pg_filename {savePCDDirectory + "optimized_poses.txt"};
-    //     saveOptimizedVerticesKITTIformat(isamCurrentEstimate, kitti_format_pg_filename);
+    //     saveOptimizedVerticesKITTIformat(iloopclosure_id_and_distsamCurrentEstimate, kitti_format_pg_filename);
 
     //     // save map 
     //     cout << "****************************************************" << endl;
@@ -540,15 +867,7 @@ public:
     // void publishGlobalMap()
     // {
     //     if (pubLaserCloudSurround.getNumSubscribers() == 0)
-    //         return;
-
-    //     if (cloudKeyPoses3D->points.empty() == true)
-    //         return;
-
-    //     pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
-    //     pcl::PointCloud<PointType>::Ptr globalMapKeyPoses(new pcl::PointCloud<PointType>());
-    //     pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
-    //     pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
+    //         return;loopclosure_id_and_distglobalMapKeyFrames(new pcl::PointCloud<PointType>());
     //     pcl::PointCloud<PointType>::Ptr globalMapKeyFramesDS(new pcl::PointCloud<PointType>());
 
     //     // kd-tree to find near key frames to visualize
@@ -595,7 +914,7 @@ public:
         {
             rate.sleep();
             // performRSLoopClosure();     //TODO 是否为lio-sam原始的icp回环检测 如果是 是否屏蔽了? 如何屏蔽？ 
-            performSCLoopClosure(); // giseop   
+            // performSCLoopClosure(); // giseop   
             visualizeLoopClosure();
         }
     }
@@ -705,25 +1024,30 @@ public:
 
     void performSCLoopClosure()     //执行回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
     {
-        if (cloudKeyPoses3D->points.empty() == true)    //points是储存所有点数据的数组 判断点云是否为空
-            return;
+        // if (cloudKeyPoses3D->points.empty() == true)    //points是储存所有点数据的数组 判断点云是否为空
+        //     return;
 
         // find keys
+        // cout << "   xwl enter perform sc loop closure" << endl;
+
         auto detectResult = scManager.detectLoopClosureID(); // first: nn index, second: yaw diff 
-        int loopKeyCur = copy_cloudKeyPoses3D->size() - 1;; //获取当前获取的实时帧id
+        int loopKeyCur = copy_cloudKeyPoses3D->size() - 1;   //获取当前获取的实时帧id  变量失效
         int loopKeyPre = detectResult.first;                //获取存在回环的历史帧的id 若不存在则返回-1
         float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-        std::cout << "SC loop found! between " << loopKeyCur << " and " << loopKeyPre << "." << std::endl; // giseop
+        std::cout << "SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
+
+        //xwl 描述符匹配旋转位姿转换对比
+
 
         // extract cloud
         pcl::PointCloud<PointType>::Ptr cureKeyframeCloud(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr prevKeyframeCloud(new pcl::PointCloud<PointType>());
-        {
-            // loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
-            // loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
+        // {
+            loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
+            loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
 
             int base_key = 0;
             loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, base_key); // giseop 
@@ -732,8 +1056,11 @@ public:
             if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)    //? 这里判断点云内的点数量是否足够？
                 return;
             if (pubHistoryKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅历史关键帧话题 getNumSubscribers返回是否有节点订阅
-                publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 话题帧名
-        }
+                publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 点云坐标系
+        // }
+
+
+        
 
         // ICP Settings
         static pcl::IterativeClosestPoint<PointType, PointType> icp;
@@ -1174,10 +1501,11 @@ public:
 
     void downsampleCurrentScan()    //当前扫描降采样处理
     {
+        //xwl 取消点云的降采样
         // giseop
-        laserCloudRawDS->clear();       //清空点云数据函数
-        downSizeFilterSC.setInputCloud(laserCloudRaw);  //三种点云类型全部都进行降采样处理
-        downSizeFilterSC.filter(*laserCloudRawDS);        
+        // laserCloudRawDS->clear();       //清空点云数据函数
+        // downSizeFilterSC.setInputCloud(laserCloudRaw);  //三种点云类型全部都进行降采样处理
+        // downSizeFilterSC.filter(*laserCloudRawDS);        
 
         // Downsample cloud from current scan
         laserCloudCornerLastDS->clear();
@@ -1726,7 +2054,7 @@ public:
     //     aLoopIsClosed = true;
     // }
 
-    void saveKeyFramesAndFactor()   //回环相关函数 TODO 求解描述符并更新位姿信息
+    void saveKeyFramesAndFactor()   //回环相关函数 TODO 求解描述符并保存矩阵和点云
     {
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
@@ -1756,7 +2084,7 @@ public:
         // gtSAMgraph.resize(0);
         // initialEstimate.clear();
 
-        //save key poses
+        // //save key poses
         // PointType thisPose3D;
         // PointTypePose thisPose6D;
         // Pose3 latestEstimate;
@@ -1813,10 +2141,11 @@ public:
 
         //这里对输入类型进行判断后分类处理，但目前已经将分类条件写死了
         if( sc_input_type == SCInputType::SINGLE_SCAN_FULL ) {
-            std::cout << "xwl make and save scan context and keys" << std::endl;
+            // std::cout << "xwl make and save scan context and keys" << std::endl;
             pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
-            pcl::copyPointCloud(*laserCloudRawDS,  *thisRawCloudKeyFrame);  //复制点云
-            scManager.makeAndSaveScancontextAndKeys(*thisRawCloudKeyFrame);    
+            pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云
+            scManager.makeAndSaveScancontextAndKeys(*thisRawCloudKeyFrame);    //使用点云进行描述符制作
+            scManager.context_origin_index.push_back(laser_cloud_frame_number);          //保存原始点云帧序号
         }  
         // else if (sc_input_type == SCInputType::SINGLE_SCAN_FEAT) {      //无法进入
         //     scManager.makeAndSaveScancontextAndKeys(*thisSurfKeyFrame); 
@@ -1876,29 +2205,29 @@ public:
     //             cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<Pose3>(i).rotation().pitch();
     //             cloudKeyPoses6D->points[i].yaw   = isamCurrentEstimate.at<Pose3>(i).rotation().yaw();
 
-    //             updatePath(cloudKeyPoses6D->points[i]);
+    //             updatePath(cloudKeyPoses6D->points[i]); //更新发布路径函数
     //         }
 
     //         aLoopIsClosed = false;
     //     }
     // }
 
-    // void updatePath(const PointTypePose& pose_in)
-    // {
-    //     geometry_msgs::PoseStamped pose_stamped;
-    //     pose_stamped.header.stamp = ros::Time().fromSec(pose_in.time);
-    //     pose_stamped.header.frame_id = odometryFrame;
-    //     pose_stamped.pose.position.x = pose_in.x;
-    //     pose_stamped.pose.position.y = pose_in.y;
-    //     pose_stamped.pose.position.z = pose_in.z;
-    //     tf::Quaternion q = tf::createQuaternionFromRPY(pose_in.roll, pose_in.pitch, pose_in.yaw);   //将欧拉角转换成四元数
-    //     pose_stamped.pose.orientation.x = q.x();
-    //     pose_stamped.pose.orientation.y = q.y();
-    //     pose_stamped.pose.orientation.z = q.z();
-    //     pose_stamped.pose.orientation.w = q.w();
+    void updatePath(const PointTypePose& pose_in)   //发布路径更新路径
+    {
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = ros::Time().fromSec(pose_in.time);
+        pose_stamped.header.frame_id = odometryFrame;
+        pose_stamped.pose.position.x = pose_in.x;
+        pose_stamped.pose.position.y = pose_in.y;
+        pose_stamped.pose.position.z = pose_in.z;
+        tf::Quaternion q = tf::createQuaternionFromRPY(pose_in.roll, pose_in.pitch, pose_in.yaw);   //将欧拉角转换成四元数
+        pose_stamped.pose.orientation.x = q.x();
+        pose_stamped.pose.orientation.y = q.y();
+        pose_stamped.pose.orientation.z = q.z();
+        pose_stamped.pose.orientation.w = q.w();
 
-    //     globalPath.poses.push_back(pose_stamped);
-    // }
+        globalPath.poses.push_back(pose_stamped);
+    }
 
     // void publishOdometry()
     // {
@@ -1973,30 +2302,30 @@ public:
 
     void publishFrames()
     {
-        if (cloudKeyPoses3D->points.empty())
-            return;
+        // if (cloudKeyPoses3D->points.empty())
+        //     return;
         // publish key poses
-        publishCloud(&pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, odometryFrame);
+        // publishCloud(&pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, odometryFrame);
         // Publish surrounding key frames
-        publishCloud(&pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, odometryFrame);
+        // publishCloud(&pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, odometryFrame);
         // publish registered key frame
-        if (pubRecentKeyFrame.getNumSubscribers() != 0)
-        {
-            pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-            PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
-            *cloudOut += *transformPointCloud(laserCloudCornerLastDS,  &thisPose6D);
-            *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
-            publishCloud(&pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, odometryFrame);
-        }
+        // if (pubRecentKeyFrame.getNumSubscribers() != 0)
+        // {
+        //     pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+        //     PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
+        //     *cloudOut += *transformPointCloud(laserCloudCornerLastDS,  &thisPose6D);
+        //     *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
+        //     publishCloud(&pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, odometryFrame);
+        // }
         // publish registered high-res raw cloud
-        if (pubCloudRegisteredRaw.getNumSubscribers() != 0)
-        {
-            pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-            pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
-            PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
-            *cloudOut = *transformPointCloud(cloudOut,  &thisPose6D);
-            publishCloud(&pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, odometryFrame);
-        }
+        // if (pubCloudRegisteredRaw.getNumSubscribers() != 0)
+        // {
+        //     pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+        //     pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
+        //     PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
+        //     *cloudOut = *transformPointCloud(cloudOut,  &thisPose6D);
+        //     publishCloud(&pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, odometryFrame);
+        // }
         // publish path
         if (pubPath.getNumSubscribers() != 0)
         {

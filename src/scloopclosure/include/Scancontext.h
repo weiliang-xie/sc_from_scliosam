@@ -87,7 +87,7 @@ public:
 
     // tree
     const int    NUM_EXCLUDE_RECENT = 30; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
-    const int    NUM_CANDIDATES_FROM_TREE = 3; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
+    const int    NUM_CANDIDATES_FROM_TREE = 10; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres
     const double SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
@@ -104,6 +104,8 @@ public:
     std::vector<Eigen::MatrixXd> polarcontexts_;
     std::vector<Eigen::MatrixXd> polarcontext_invkeys_;
     std::vector<Eigen::MatrixXd> polarcontext_vkeys_;
+    std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
+    std::vector<std::pair<int,double>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
 
     KeyMat polarcontext_invkeys_mat_;   //float的容器的容器
     KeyMat polarcontext_invkeys_to_search_;

@@ -254,8 +254,10 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
 {
     int loop_id { -1 }; // init with -1, -1 means no loop (== LeGO-LOAM's variable "closestHistoryFrameID")
 
-    auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
+    // cout << "enter descriptor detect" << endl;
+
+    // auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
+    // auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
 
     /* 
      * step 1: candidates from ringkey tree_
@@ -263,8 +265,12 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     if( (int)polarcontext_invkeys_mat_.size() < NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
     {
         std::pair<int, float> result {loop_id, 0.0};
+        // cout << "descriptor number is not enough" << endl;
         return result; // Early return 
     }
+
+    auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
+    auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
 
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
     if( tree_making_period_conter % TREE_MAKING_PERIOD_ == 0) // to save computation cost
@@ -318,22 +324,26 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     }
     t_calc_dist.toc("Distance calc");
 
+    //储存回环帧的id和相似度距离
+    std::pair<int,float> data{(polarcontexts_.size()-1),min_dist};
+    loopclosure_id_and_dist.push_back(data);
+
     /* 
      * loop threshold check
      */
     if( min_dist < SC_DIST_THRES )  //是否达到回环阈值判断
     {
         loop_id = nn_idx; 
-    
-        // std::cout.precision(3); 
-        cout << "[Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[Loop found] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
+        
+        std::cout.precision(3); 
+        // cout << "[Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
+        // cout << "[Loop found] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
     }
     else
     {
         std::cout.precision(3); 
-        cout << "[Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[Not loop] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
+        // cout << "[Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
+        // cout << "[Not loop] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
     }
 
     // To do: return also nn_align (i.e., yaw diff)
