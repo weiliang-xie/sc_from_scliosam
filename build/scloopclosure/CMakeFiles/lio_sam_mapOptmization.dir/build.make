@@ -97,16 +97,32 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.s: cmake
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.s"
 	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/src/Scancontext.cpp -o CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.s
 
+scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/flags.make
+scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o: /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/src/Normaldistribute.cpp
+scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o"
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o -MF CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o.d -o CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o -c /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/src/Normaldistribute.cpp
+
+scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.i"
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/src/Normaldistribute.cpp > CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.i
+
+scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.s"
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/jtcx/remote_control/code/sc_from_scliosam/src/scloopclosure/src/Normaldistribute.cpp -o CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.s
+
 # Object files for target lio_sam_mapOptmization
 lio_sam_mapOptmization_OBJECTS = \
 "CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o" \
-"CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.o"
+"CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.o" \
+"CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o"
 
 # External object files for target lio_sam_mapOptmization
 lio_sam_mapOptmization_EXTERNAL_OBJECTS =
 
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/mapOptmization.cpp.o
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Scancontext.cpp.o
+/home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: /opt/ros/noetic/lib/libtf.so
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: /opt/ros/noetic/lib/libtf2_ros.so
@@ -432,7 +448,7 @@ lio_sam_mapOptmization_EXTERNAL_OBJECTS =
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: /usr/lib/x86_64-linux-gnu/libboost_chrono.so
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: /usr/local/lib/libmetis-gtsam.so
 /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization: scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable /home/jtcx/remote_control/code/sc_from_scliosam/devel/lib/lio_sam/lio_sam_mapOptmization"
 	cd /home/jtcx/remote_control/code/sc_from_scliosam/build/scloopclosure && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/lio_sam_mapOptmization.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

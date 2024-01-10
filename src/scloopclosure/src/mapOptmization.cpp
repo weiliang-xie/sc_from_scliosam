@@ -21,6 +21,7 @@
 // #include <pcl/registration/ndt.h>
 
 #include "Scancontext.h"
+#include "Normaldistribute.h"
 
 
 using namespace gtsam;
@@ -202,6 +203,7 @@ public:
 
     // // loop detector 
     SCManager scManager;    //SC类定义
+    NDManager ndManager;    //ND类定义
 
     // data saver
     std::fstream pgSaveStream; // pg: pose-graph 
@@ -213,6 +215,8 @@ public:
 
     std::string saveSCDDirectory;
     std::string saveNodePCDDirectory;
+    std::string NDsaveSCDDirectory;
+    std::string NDsaveNodePCDDirectory;
 
     //xwl 修改添加
     int16_t laser_cloud_frame_number;   //实时更新的当前帧id
@@ -223,7 +227,9 @@ public:
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
     std::vector<int> loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
-    string pr_data_file = savePCDDirectory + "PRcurve/kitti_00.csv";    //pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SCPRcurve/kitti_00.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "NDPRcurve/kitti_00.csv";    //ND pr数据储存地址
+
 
 public:
     mapOptimization()
@@ -274,9 +280,17 @@ public:
         unused = system((std::string("exec rm -r ") + saveSCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + saveSCDDirectory).c_str());
 
+        NDsaveSCDDirectory = savePCDDirectory + "NDSCDs/"; // SCD: scan context descriptor 
+        unused = system((std::string("exec rm -r ") + NDsaveSCDDirectory).c_str());
+        unused = system((std::string("mkdir -p ") + NDsaveSCDDirectory).c_str());
+
         saveNodePCDDirectory = savePCDDirectory + "Scans/";
         unused = system((std::string("exec rm -r ") + saveNodePCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + saveNodePCDDirectory).c_str());
+
+        NDsaveNodePCDDirectory = savePCDDirectory + "NDScans/";
+        unused = system((std::string("exec rm -r ") + NDsaveNodePCDDirectory).c_str());
+        unused = system((std::string("mkdir -p ") + NDsaveNodePCDDirectory).c_str());
 
         pgSaveStream = std::fstream(savePCDDirectory + "singlesession_posegraph.g2o", std::fstream::out);
         pgTimeSaveStream = std::fstream(savePCDDirectory + "times.txt", std::fstream::out); pgTimeSaveStream.precision(dbl::max_digits10);
@@ -477,9 +491,9 @@ public:
     }
 
     /*回环PR计算
-      输入： 
+      输入： 预测点云帧id和最小距离
       输出： PR值*/
-    void makeprcurvedata()
+    std::vector<std::pair<double,double>> makeprcurvedata1(std::vector<std::pair<int,double>> & loopclosure_id_and_dist)
     {
         std::vector<std::pair<double,double>> pr_data_queue;
         int tp,fp,fn,pre_loop_num;
@@ -493,14 +507,14 @@ public:
         pre_loop_num = 0;
 
         //寻找dist最大值 最小值
-        for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+        for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
         {
             min_dist = pre_pair->second < min_dist ? pre_pair->second : min_dist;
             max_dist = pre_pair->second > max_dist ? pre_pair->second : max_dist;
         }
 
-        cout << "predict loop closure num is        " << scManager.loopclosure_id_and_dist.size() << endl;
-        cout << "predict origin loop closure num is " << scManager.context_origin_index.size() << endl;
+        cout << "predict loop closure num is        " << loopclosure_id_and_dist.size() << endl;
+        // cout << "predict origin loop closure num is " << scManager.context_origin_index.size() << endl;
 
 
         cout << "min distance is: " << min_dist << "    max distance is: " << max_dist <<endl;
@@ -509,7 +523,7 @@ public:
         for(value = min_dist + (max_dist-min_dist)/20; value <= max_dist; value += (max_dist-min_dist)/20)
         {
             cout << "value is: " << value << endl;
-            for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+            for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
             {
                 if(pre_pair->second <= value)
                 {
@@ -549,9 +563,14 @@ public:
             cout << "all cloud frame num:   " << laser_cloud_frame_number << endl;
             cout << "loop closure gt num:   " << loopclosure_gt_index.size() << endl; 
 
+        return pr_data_queue;
 
+    }
+
+    void saveprcurvedata(const std::string pr_data_file_name, std::vector<std::pair<double,double>> pr_data_queue)
+    {
         //写入csv文件
-        prFile.open(pr_data_file, ios::out);
+        prFile.open(pr_data_file_name, ios::out);
         // 写入标题行
         prFile << "recall" << ',' << "presession" << endl;
 
@@ -559,7 +578,96 @@ public:
         {
             prFile << prdata->first << "," << prdata->second << endl;
         }
-        prFile.close();
+        prFile.close();        
+    }
+
+    void makeandsaveprcurve()
+    {
+        std::vector<std::pair<double,double>> sc_pr_data_queue;
+        std::vector<std::pair<double,double>> nd_pr_data_queue;
+
+        sc_pr_data_queue = makeprcurvedata1(scManager.loopclosure_id_and_dist);
+        nd_pr_data_queue = makeprcurvedata1(ndManager.loopclosure_id_and_dist);
+
+        saveprcurvedata(sc_pr_data_file, sc_pr_data_queue);
+        saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
+
+    }
+
+    /*回环PR计算
+      输入： 
+      输出： PR值*/
+    void makeprcurvedata()
+    {
+
+
+
+        // int tp,fp,fn,pre_loop_num;
+        // double presession, recall;
+        // double value;
+        // double min_dist = 100000;
+        // double max_dist = 0.00001;
+        // tp = 0;
+        // fp = 0;
+        // fn = 0;
+        // pre_loop_num = 0;
+        // //寻找dist最大值 最小值
+        // for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+        // {
+        //     min_dist = pre_pair->second < min_dist ? pre_pair->second : min_dist;
+        //     max_dist = pre_pair->second > max_dist ? pre_pair->second : max_dist;
+        // }
+        // cout << "predict loop closure num is        " << scManager.loopclosure_id_and_dist.size() << endl;
+        // cout << "predict origin loop closure num is " << scManager.context_origin_index.size() << endl;
+        // cout << "min distance is: " << min_dist << "    max distance is: " << max_dist <<endl;
+        // //将dist划分出20个阈值
+        // for(value = min_dist + (max_dist-min_dist)/20; value <= max_dist; value += (max_dist-min_dist)/20)
+        // {
+        //     cout << "value is: " << value << endl;
+        //     for(auto pre_pair = scManager.loopclosure_id_and_dist.begin(); pre_pair != scManager.loopclosure_id_and_dist.end(); ++pre_pair)
+        //     {
+        //         if(pre_pair->second <= value)
+        //         {
+        //             pre_loop_num++;
+        //             // cout << "pre_pair_index: " << pre_pair->first << " is loop frame" << endl;
+        //             for(auto gt_it = loopclosure_gt_index.begin(); gt_it != loopclosure_gt_index.end(); ++gt_it)
+        //             {
+        //                 if(*gt_it == pre_pair->first)
+        //                 {
+        //                     tp++;
+        //                     break;
+        //                 }                    
+        //                 if(gt_it == loopclosure_gt_index.end() - 1)
+        //                     fp++;
+        //             }                    
+        //         } 
+        //     }
+        //     fn = loopclosure_gt_index.size() - tp;
+        //     cout << "tp: " << tp << "   fp: " << fp << endl;
+        //     cout << "loop closure pre num:  " << pre_loop_num << endl;
+        //     presession = (static_cast<double>(tp)/(tp + fn));
+        //     recall = (static_cast<double>(tp)/(tp + fp));
+        //     tp = 0;
+        //     fp = 0;
+        //     pre_loop_num = 0;
+        //     std::pair<double,double> pr_data = {recall,presession};
+        //     pr_data_queue.push_back(pr_data);
+        //     cout << "presession: " << presession << "   recall: " << recall << endl;
+        // }
+        //     cout << "all cloud frame num:   " << laser_cloud_frame_number << endl;
+        //     cout << "loop closure gt num:   " << loopclosure_gt_index.size() << endl; 
+
+
+        //写入csv文件
+        // prFile.open(pr_data_file, ios::out);
+        // // 写入标题行
+        // prFile << "recall" << ',' << "presession" << endl;
+
+        // for(auto prdata = sc_pr_data_queue.begin(); prdata != sc_pr_data_queue.end(); ++prdata)
+        // {
+        //     prFile << prdata->first << "," << prdata->second << endl;
+        // }
+        // prFile.close();
     }
 
 
@@ -684,7 +792,11 @@ public:
 
             SCsaveKeyFramesAndFactor();   //制作描述符并更新位姿信息
 
+            NDsaveKeyFramesAndFactor();     //制作ND描述符
+
             performSCLoopClosure();      //求解回环状态
+
+            NDperformSCLoopClosure();      //求解ND回环状态
 
             publishFrames();             //发布路径
 
@@ -696,7 +808,7 @@ public:
 
         //接收完数据后进行pr计算
         if(laser_cloud_frame_number == 4541)
-            makeprcurvedata();
+            makeandsaveprcurve();
     }
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
@@ -814,7 +926,7 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-        std::cout << "SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
+        std::cout << "[SC] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
 
         //xwl 描述符匹配旋转位姿转换对比
 
@@ -913,6 +1025,122 @@ public:
         // add loop constriant
         // loopIndexContainer[loopKeyCur] = loopKeyPre;
         loopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
+    } // performSCLoopClosure
+
+    void NDperformSCLoopClosure()     //执行ND回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
+    {
+        // if (cloudKeyPoses3D->points.empty() == true)    //points是储存所有点数据的数组 判断点云是否为空
+        //     return;
+
+        // find keys
+        // cout << "   xwl enter perform sc loop closure" << endl;
+
+        auto detectResult = ndManager.NDdetectLoopClosureID(); // first: nn index, second: yaw diff 
+        int loopKeyCur = copy_cloudKeyPoses3D->size() - 1;   //获取当前获取的实时帧id  变量失效
+        int loopKeyPre = detectResult.first;                //获取存在回环的历史帧的id 若不存在则返回-1
+        float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
+        if( loopKeyPre == -1 /* No loop found */)
+            return;
+
+        std::cout << "[ND] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
+
+        //xwl 描述符匹配旋转位姿转换对比
+
+
+        // // extract cloud
+        // pcl::PointCloud<PointType>::Ptr cureKeyframeCloud(new pcl::PointCloud<PointType>());
+        // pcl::PointCloud<PointType>::Ptr prevKeyframeCloud(new pcl::PointCloud<PointType>());
+        // // {
+            // loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
+            // loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
+
+            // int base_key = 0;
+            // loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, base_key); // giseop 
+            // loopFindNearKeyframesWithRespectTo(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum, base_key); // giseop    //获取转换后的点云
+
+            // if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)    //? 这里判断点云内的点数量是否足够？
+            //     return;
+            // if (pubHistoryKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅历史关键帧话题 getNumSubscribers返回是否有节点订阅
+            //     publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 点云坐标系
+        // }
+
+
+        
+
+        // ICP Settings
+        // static pcl::IterativeClosestPoint<PointType, PointType> icp;
+        // icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
+        // icp.setMaximumIterations(100);
+        // icp.setTransformationEpsilon(1e-6);
+        // icp.setEuclideanFitnessEpsilon(1e-6);
+        // icp.setRANSACIterations(0);
+
+        // Align clouds
+        // icp.setInputSource(cureKeyframeCloud);  //输入当前实时帧和回环找到的匹配帧
+        // icp.setInputTarget(prevKeyframeCloud);
+        // pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
+        // icp.align(*unused_result);  //?ICP配准没有用上初始位姿？
+        // // giseop 
+        // // TODO icp align with initial 
+
+        // if (icp.hasConverged() == false || icp.getFitnessScore() > historyKeyframeFitnessScore) {
+        //     std::cout << "ICP fitness test failed (" << icp.getFitnessScore() << " > " << historyKeyframeFitnessScore << "). Reject this SC loop." << std::endl;
+        //     return;
+        // } else {
+        //     std::cout << "ICP fitness test passed (" << icp.getFitnessScore() << " < " << historyKeyframeFitnessScore << "). Add this SC loop." << std::endl;
+        // }
+
+        // publish corrected cloud
+        // if (pubIcpKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅ICP配准转换后的点云
+        // {
+        //     pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
+        //     pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());  //将当前帧用ICP配准后的转换矩阵转换
+        //     publishCloud(&pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);    //发布转换后的实时帧
+        // }
+
+        // Get pose transformation
+        // float x, y, z, roll, pitch, yaw;
+        // Eigen::Affine3f correctionLidarFrame;   //定义一个三维仿射变换矩阵
+        // correctionLidarFrame = icp.getFinalTransformation();    //获取配准后的转换矩阵 getFinalTransformation()返回的是4x4矩阵
+
+        // // transform from world origin to wrong pose
+        // Eigen::Affine3f tWrong = pclPointToAffine3f(copy_cloudKeyPoses6D->points[loopKeyCur]);
+        // // transform from world origin to corrected pose
+        // Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
+        // pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
+        // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
+        // gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
+
+        // gtsam::Vector Vector6(6);
+        // float noiseScore = icp.getFitnessScore();
+        // Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
+        // noiseModel::Diagonal::shared_ptr constraintNoise = noiseModel::Diagonal::Variances(Vector6);
+
+        // giseop 
+        // pcl::getTranslationAndEulerAngles (correctionLidarFrame, x, y, z, roll, pitch, yaw);    //从变换矩阵中获取转换值
+        // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
+        // gtsam::Pose3 poseTo = Pose3(Rot3::RzRyRx(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0));
+
+        // giseop, robust kernel for a SC loop
+        // float robustNoiseScore = 0.5; // constant is ok...
+        // gtsam::Vector robustNoiseVector6(6); 
+        // robustNoiseVector6 << robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore;
+        // noiseModel::Base::shared_ptr robustConstraintNoise; 
+        // robustConstraintNoise = gtsam::noiseModel::Robust::Create(
+        //     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure, but with a good front-end loop detector, Cauchy is empirically enough.
+        //     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6)
+        // ); // - checked it works. but with robust kernel, map modification may be delayed (i.e,. requires more true-positive loop factors)
+
+        // Add pose constraint
+        // mtx.lock();
+        // loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
+        // loopPoseQueue.push_back(poseFrom.between(poseTo));  //
+        // loopNoiseQueue.push_back(robustConstraintNoise);
+        // mtx.unlock();
+
+        // add loop constriant
+        // loopIndexContainer[loopKeyCur] = loopKeyPre;
+        // loopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
     } // performSCLoopClosure
 
     void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum)
@@ -1056,8 +1284,6 @@ public:
         return true;
     }
 
-
-
     void SCsaveKeyFramesAndFactor()   //回环相关函数 TODO 求解描述符并保存矩阵和点云
     {
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
@@ -1092,6 +1318,38 @@ public:
         }
         pcl::io::savePCDFileBinary(saveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
         pgTimeSaveStream << laserCloudRawTime << std::endl;
+    }
+
+    void NDsaveKeyFramesAndFactor()     //ND描述符制作
+    {
+        if (saveFrame() == false)   //判断是否满足保存关键帧的要求
+            return;
+
+        // std::cout << "[ND] make and save ND scan context and keys" << std::endl;
+
+        pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
+        pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云
+        ndManager.NDmakeAndSaveScancontextAndKeys(*thisRawCloudKeyFrame);    //使用点云进行描述符制作
+        ndManager.context_origin_index.push_back(laser_cloud_frame_number);          //保存原始点云帧序号
+
+        // save sc data
+        const auto& curr_scd = ndManager.NDgetConstRefRecentSCD();    //获取当前的SC描述矩阵
+        std::string curr_scd_node_idx = padZeros(ndManager.polarcontexts_.size() - 1);  //记下当前矩阵序号（string） 用于保存文件的命名
+
+        saveSCD(NDsaveSCDDirectory + curr_scd_node_idx + ".scd", curr_scd);   //命名并保存矩阵
+
+
+        // save keyframe cloud as file giseop
+        bool saveRawCloud { true }; //这里是选择保存哪种类型的点云
+        pcl::PointCloud<PointType>::Ptr thisKeyFrameCloud(new pcl::PointCloud<PointType>());
+        if(saveRawCloud) { 
+            *thisKeyFrameCloud += *laserCloudRaw;
+        } else {
+            // *thisKeyFrameCloud += *thisCornerKeyFrame;
+            // *thisKeyFrameCloud += *thisSurfKeyFrame;
+        }
+        pcl::io::savePCDFileBinary(NDsaveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
+        pgTimeSaveStream << laserCloudRawTime << std::endl;        
     }
 
     void updatePath(const PointTypePose& pose_in)   //发布路径更新路径

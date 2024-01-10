@@ -1137,6 +1137,30 @@ lio_sam_mapOptmization/fast:
 	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build
 .PHONY : lio_sam_mapOptmization/fast
 
+src/Normaldistribute.o: src/Normaldistribute.cpp.o
+.PHONY : src/Normaldistribute.o
+
+# target to build an object file
+src/Normaldistribute.cpp.o:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.o
+.PHONY : src/Normaldistribute.cpp.o
+
+src/Normaldistribute.i: src/Normaldistribute.cpp.i
+.PHONY : src/Normaldistribute.i
+
+# target to preprocess a source file
+src/Normaldistribute.cpp.i:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.i
+.PHONY : src/Normaldistribute.cpp.i
+
+src/Normaldistribute.s: src/Normaldistribute.cpp.s
+.PHONY : src/Normaldistribute.s
+
+# target to generate assembly for a file
+src/Normaldistribute.cpp.s:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Normaldistribute.cpp.s
+.PHONY : src/Normaldistribute.cpp.s
+
 src/Scancontext.o: src/Scancontext.cpp.o
 .PHONY : src/Scancontext.o
 
@@ -1267,6 +1291,9 @@ help:
 	@echo "... tf_generate_messages_nodejs"
 	@echo "... tf_generate_messages_py"
 	@echo "... lio_sam_mapOptmization"
+	@echo "... src/Normaldistribute.o"
+	@echo "... src/Normaldistribute.i"
+	@echo "... src/Normaldistribute.s"
 	@echo "... src/Scancontext.o"
 	@echo "... src/Scancontext.i"
 	@echo "... src/Scancontext.s"
