@@ -57,7 +57,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
         nd_uint_point_queue[ring_idx - 1][sctor_idx - 1].push_back(piont_data);
     }
 
-    cout << "[ND] finish point classcify" << endl;
+    // cout << "[ND] finish point classcify" << endl;
 
 
     ring_idx = -1;
@@ -100,7 +100,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
             if( desc(row_idx, col_idx) == NO_POINT )
                 desc(row_idx, col_idx) = 0;
 
-    cout << "[ND] finish make ND descriptor" << endl;
+    // cout << "[ND] finish make ND descriptor" << endl;
 
     t_making_desc.toc("PolarContext making");
 
@@ -154,7 +154,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     if( (int)polarcontext_invkeys_mat_.size() < ND_NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
     {
         std::pair<int, float> result {loop_id, 0.0};
-        cout << "[ND] descriptor number is not enough" << endl;
+        // cout << "[ND] descriptor number is not enough" << endl;
         return result; // Early return 
     }
 
@@ -226,13 +226,13 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         
         std::cout.precision(3); 
         cout << "[ND] [Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[ND] [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
+        // cout << "[ND] [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
     }
     else
     {
         std::cout.precision(3); 
         cout << "[ND] [Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[ND] [Not loop] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
+        // cout << "[ND] [Not loop] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
     }
 
     // To do: return also nn_align (i.e., yaw diff)

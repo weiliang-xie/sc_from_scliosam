@@ -548,8 +548,8 @@ public:
             cout << "tp: " << tp << "   fp: " << fp << endl;
             cout << "loop closure pre num:  " << pre_loop_num << endl;
 
-            presession = (static_cast<double>(tp)/(tp + fn));
-            recall = (static_cast<double>(tp)/(tp + fp));
+            presession = (static_cast<double>(tp)/(tp + fp));
+            recall = (static_cast<double>(tp)/(tp + fn));
             tp = 0;
             fp = 0;
             pre_loop_num = 0;
