@@ -59,6 +59,21 @@ public:
 
     const Eigen::MatrixXd& NDgetConstRefRecentSCD(void);
 
+    Eigen::MatrixXd NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont);
+    Eigen::MatrixXd NDGetSingularvalue(Eigen::MatrixXd bin_cov);
+
+    template<typename _Tp>
+    void print_matrix(const _Tp* data, const int rows, const int cols)
+    {
+    	for (int y = 0; y < rows; ++y) {
+    		for (int x = 0; x < cols; ++x) {
+    			fprintf(stderr, "  %f  ", static_cast<float>(data[y * cols + x]));
+    		}
+    		fprintf(stderr, "\n");
+    	}
+    	fprintf(stderr, "\n");
+    }
+
 public:
     const double LIDAR_HEIGHT = 2.0;                                                //雷达高度
     const int    ND_PC_NUM_RING = 20;                                               //圆环数量 沿径向切割

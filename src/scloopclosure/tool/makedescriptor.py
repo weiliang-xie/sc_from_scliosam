@@ -1,3 +1,4 @@
+#! /usr/bin/python3
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -10,7 +11,7 @@ def file2array(path, delimiter=' '):     # delimiter是数据分隔符
     data_list = [[float(i) for i in row.strip().split(delimiter)] for row in row_list]
     return np.array(data_list)
  
-data = file2array('../../../data/LOAMSCDs/000022.scd')
+data = file2array('../../../data/LOAMNDSCDs/003000.scd')
 print(data)
 print("data's shape", data.shape)
 

@@ -520,7 +520,7 @@ public:
         cout << "min distance is: " << min_dist << "    max distance is: " << max_dist <<endl;
 
         //将dist划分出20个阈值
-        for(value = min_dist + (max_dist-min_dist)/20; value <= max_dist; value += (max_dist-min_dist)/20)
+        for(value = min_dist + (max_dist-min_dist)/50; value <= max_dist; value += (max_dist-min_dist)/50)
         {
             cout << "value is: " << value << endl;
             for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
@@ -926,7 +926,7 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-        std::cout << "[SC] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
+        // std::cout << "[SC] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
 
         //xwl 描述符匹配旋转位姿转换对比
 
@@ -1042,7 +1042,7 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-        std::cout << "[ND] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
+        // std::cout << "[ND] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
 
         //xwl 描述符匹配旋转位姿转换对比
 
@@ -1411,6 +1411,19 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "lio_sam");
 
     mapOptimization MO;
+
+    // Eigen::Vector3d m1,m2,m3;
+    // m1 << 1.2, 2.5, 5.6;
+    // m2 << -3.6, 9.2, 0.5;
+    // m3 << 4.3, 1.3, 9.4;
+    // std::vector<Eigen::Vector3d> piont;
+    // piont.push_back(m1);
+    // piont.push_back(m2);
+    // piont.push_back(m3);
+
+    // Eigen::MatrixXd cov;
+    // cov = MO.ndManager.NDGetCovarMatrix(piont);
+    // MO.ndManager.NDGetSingularvalue(cov);
 
     ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     

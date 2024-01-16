@@ -1,5 +1,12 @@
 #include "Normaldistribute.h"
 #include "Scancontext.h"
+#include <cmath>
+
+#include <math.h>
+#include <iostream>
+#include <vector>
+#include <string>
+#include <Eigen/Dense>
 
 void NDManager::NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
@@ -27,13 +34,14 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
     int num_pts_scan_down = _scan_cloud.points.size();
     std::vector<std::vector<std::vector<Eigen::Vector3d> > > nd_uint_point_queue
                                                             (ND_PC_NUM_RING,std::vector<std::vector<Eigen::Vector3d> >(ND_PC_NUM_SECTOR,std::vector<Eigen::Vector3d>(0)));  //单元内的点的数组
+    std::vector<Eigen::MatrixXd> bin_cov;   //单个描述符的单元协方差序列
+    std::vector<Eigen::MatrixXd> bin_singular;   //单个描述符的单元奇异值序列
+
 
 
     SCPointType pt;
     float azim_angle, azim_range; // wihtin 2d plane
     int ring_idx, sctor_idx;
-    Eigen::Vector3d miu_piont; 
-    miu_piont.Zero();
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -62,8 +70,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
     ring_idx = -1;
     sctor_idx = -1;
-
-    //单元均值 协方差提取
+    //单元均值
     for(auto &ring_it : nd_uint_point_queue)
     {
         sctor_idx = -1;
@@ -72,23 +79,33 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
         {
             sctor_idx++;
             // cout << bin_it.size() << " ";
-            if(bin_it.size() < 6)
-            {
+            if(bin_it.size() < 50)      //6->10
+            {   
                 bin_it.clear();
                 continue;
             }
-            // 求均值
-            for(auto &point_it : bin_it)
-            {
-                miu_piont += point_it;
-            }
 
-            miu_piont /= static_cast<double>(bin_it.size());
+            //计算协方差 奇异值
+            Eigen::MatrixXd bin_cov_;
+            Eigen::MatrixXd bin_singular_;
+            bin_cov_ = NDGetCovarMatrix(bin_it);
+            bin_cov.push_back(bin_cov_);
+            bin_singular_ = NDGetSingularvalue(bin_cov_);
+            bin_singular.push_back(bin_singular_);
+
+            //计算椭球扁平程度
+            double flat_ratio;
+            if(bin_singular_.cols() != 1){
+                cout << "The singular value is error !!!" << endl;
+            }else{
+                if(bin_singular_(2,0) != 0)
+                    flat_ratio = bin_singular_(2,0) / bin_singular_(0,0);
+                else flat_ratio = 0;
+            }
             
             //填充描述矩阵
-            // cout << "push miu_z into descriptor matrix" << ring_idx << " " << sctor_idx << endl;
-            desc(ring_idx, sctor_idx) = miu_piont[2];   //将均值z编码  
-            // cout << "miu_z is " << miu_piont[2] << endl; 
+            desc(ring_idx,sctor_idx) = flat_ratio;
+
         }
         // cout << endl;
 
@@ -293,7 +310,7 @@ int NDManager::NDfastAlignUsingVkey( MatrixXd & _vkey1, MatrixXd & _vkey2)
 std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, MatrixXd &_sc2 )
 {
     // 1. fast align using variant key (not in original IROS18)
-    MatrixXd vkey_sc1 = NDmakeSectorkeyFromScancontext( _sc1 );   //计算列的均值并以1行的形式返回整个矩阵的列向量均值
+    MatrixXd vkey_sc1 = NDmakeSectorkeyFromScancontext( _sc1 );   //计算列的均值并以行的形式返回整个矩阵的列向量均值
     MatrixXd vkey_sc2 = NDmakeSectorkeyFromScancontext( _sc2 );
     int argmin_vkey_shift = NDfastAlignUsingVkey( vkey_sc1, vkey_sc2 );   //将列均值向右移动并使用F-范数进行对比，返回偏移值
 
@@ -327,4 +344,88 @@ std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, Matr
 const Eigen::MatrixXd& NDManager::NDgetConstRefRecentSCD(void)
 {
     return polarcontexts_.back();
+}
+
+ 
+Eigen::MatrixXd NDManager::NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont)
+{
+	// reference: https://stackoverflow.com/questions/15138634/eigen-is-there-an-inbuilt-way-to-calculate-sample-covariance
+	const int rows = bin_piont.size();
+    const int cols = bin_piont[0].size();
+
+    // cout << "rows: " << rows << " cols: " << cols << endl;
+ 
+	std::vector<double> vec_;
+	for (int i = 0; i < rows; ++i) {
+        for(int j = 0; j < cols; ++j){
+		    vec_.insert(vec_.begin() + i * cols + j, bin_piont[i](j));     //将传入的数据按先后样本排列填入vector<float>
+        }
+	}   
+	Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> m(vec_.data(), rows, cols);   //将vector<float>的数据映射至Map模板 可选参数 Eigen::RowMajor 按行存储
+    
+	// fprintf(stderr, "source matrix:\n");
+	// std::cout << m << std::endl;
+ 
+	// fprintf(stdout, "\nEigen implement:\n");
+	const int nsamples = rows;
+ 
+	Eigen::MatrixXd mean = m.colwise().mean();      //求样本均值
+	// std::cout << "print mean: " << std::endl << mean << std::endl;
+ 
+	Eigen::MatrixXd tmp(rows, cols);
+	for (int y = 0; y < rows; ++y) {
+		for (int x = 0; x < cols; ++x) {
+			tmp(y, x) = m(y, x) - mean(0, x);
+		}
+	}
+	//std::cout << "tmp: " << std::endl << tmp << std::endl;
+ 
+	Eigen::MatrixXd covar = (tmp.adjoint() * tmp) / float(nsamples - 1);    //求协方差矩阵
+	// std::cout << "print covariance matrix: " << std::endl << covar << std::endl << std::endl;
+ 
+	return covar;
+}
+
+// template<typename _Tp>
+// void print_matrix(const _Tp* data, const int rows, const int cols)
+// {
+// 	for (int y = 0; y < rows; ++y) {
+// 		for (int x = 0; x < cols; ++x) {
+// 			fprintf(stderr, "  %f  ", static_cast<float>(data[y * cols + x]));
+// 		}
+// 		fprintf(stderr, "\n");
+// 	}
+// 	fprintf(stderr, "\n");
+// }
+
+ 
+Eigen::MatrixXd NDManager::NDGetSingularvalue(Eigen::MatrixXd bin_cov)
+{
+	const int rows = bin_cov.rows();
+	const int cols = bin_cov.cols();
+
+	std::vector<double> vec_;
+	for (int i = 0; i < rows; ++i) {
+        for(int j = 0; j < cols; ++j){
+            vec_.insert(vec_.begin() + i * cols + j, bin_cov(i, j));
+        }
+	}
+	Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> m(vec_.data(), rows, cols);
+ 
+	// fprintf(stderr, "source matrix:\n");
+	// std::cout << m << std::endl;
+ 
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(m, Eigen::ComputeFullV | Eigen::ComputeFullU); // ComputeThinU | ComputeThinV //奇异值分解
+	Eigen::MatrixXd singular_values = svd.singularValues(); //奇异值
+	Eigen::MatrixXd left_singular_vectors = svd.matrixU();  //左奇异值向量 U
+	Eigen::MatrixXd right_singular_vectors = svd.matrixV(); //右奇异值向量 V
+ 
+	// fprintf(stderr, "singular values:\n");
+	// print_matrix(singular_values.data(), singular_values.rows(), singular_values.cols());
+	// fprintf(stderr, "left singular vectors:\n");
+	// print_matrix(left_singular_vectors.data(), left_singular_vectors.rows(), left_singular_vectors.cols());
+	// fprintf(stderr, "right singular vecotrs:\n");
+	// print_matrix(right_singular_vectors.data(), right_singular_vectors.rows(), right_singular_vectors.cols());
+ 
+	return singular_values;
 }
