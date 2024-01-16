@@ -4,30 +4,36 @@ import matplotlib.pyplot as plt
 import pandas as pd  
  
 # 用Pandas读取csv格式的文件  
-sc = pd.read_csv('../../../data/LOAMSCPRcurve/kitti_00.csv')
-nd_a_c = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_filter_50.csv')
-nd_c_a = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca.csv')
-nd_arccos = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_num.csv')
+sc = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_height.csv')
+a = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_filter_50.csv')
+b = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_filter_100.csv')
+c = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_num.csv')
+d = pd.read_csv('../../../data/LOAMSCPRcurve/kitti_00_can-20.csv')
+
 
  
 # 提取文件中的数据  
 sc_x = sc['recall']  
 sc_y = sc['presession']   
-nd_a_c_x = nd_a_c['recall']
-nd_a_c_y = nd_a_c['presession'] 
-nd_c_a_x = nd_c_a['recall']
-nd_c_a_y = nd_c_a['presession'] 
-nd_arccos_x = nd_arccos['recall']
-nd_arccos_y = nd_arccos['presession'] 
+a_x = a['recall']
+a_y = a['presession'] 
+b_x = b['recall']
+b_y = b['presession'] 
+c_x = c['recall']
+c_y = c['presession'] 
+d_x = d['recall']
+d_y = d['presession'] 
  
 # 创建图像  
 fig = plt.figure()  
  
 # 绘制累计频率曲线  
-plt.plot(sc_x,sc_y,'-r',linewidth = 1,label='SC') 
-plt.plot(nd_a_c_x,nd_a_c_y,'-y',linewidth = 1,label='ND-ca-50')  
-plt.plot(nd_c_a_x,nd_c_a_y,'-b',linewidth = 1,label='ND-ca')  
-plt.plot(nd_arccos_x,nd_arccos_y,'-g',linewidth = 1,label='ND-ca_num')  
+plt.plot(sc_x,sc_y,'-r',linewidth = 1,label='ND_ca_height') 
+plt.plot(a_x,a_y,'-y',linewidth = 1,label='ND_ca_fiter-50')  
+plt.plot(b_x,b_y,'-b',linewidth = 1,label='ND_ca_filter-100')  
+plt.plot(c_x,c_y,'-g',linewidth = 1,label='ND_ca_num')  
+plt.plot(d_x,d_y,'-m',linewidth = 1,label='SC_can-20')  
+
 # plt.plot(x, BB, '-g')   # 绿色实线 
  
 # 设置题目与坐标轴名称  

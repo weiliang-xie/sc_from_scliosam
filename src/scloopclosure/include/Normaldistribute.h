@@ -50,7 +50,8 @@ public:
     void NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud);
     std::pair<int, float> NDdetectLoopClosureID( void ); // int: nearest node index, float: relative yaw  
     Eigen::MatrixXd NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud);
-    Eigen::MatrixXd NDmakeRingkeyFromScancontext( Eigen::MatrixXd &_desc );
+    Eigen::MatrixXd NDmakeCARingkeyFromScancontext( Eigen::MatrixXd &_desc );
+    Eigen::MatrixXd NDmakeNUMRingkeyFromScancontext( Eigen::MatrixXd &_desc );
     Eigen::MatrixXd NDmakeSectorkeyFromScancontext( Eigen::MatrixXd &_desc );
 
     int NDfastAlignUsingVkey ( MatrixXd & _vkey1, MatrixXd & _vkey2 ); 
@@ -93,8 +94,9 @@ public:
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
 
     // config 
-    const int    TREE_MAKING_PERIOD_ = 10; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
-    int          tree_making_period_conter = 0;
+    const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
+    int          tree_making_period_conter_ca = 0;
+    int          tree_making_period_conter_num = 0;
 
     //data
     std::vector<double> polarcontexts_timestamp_; // optional.
@@ -104,7 +106,10 @@ public:
     std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
     std::vector<std::pair<int,double>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
 
-    KeyMat polarcontext_invkeys_mat_;   //float的容器的容器
-    KeyMat polarcontext_invkeys_to_search_;
-    std::unique_ptr<InvKeyTree> polarcontext_tree_;
+    KeyMat polarcontext_invkeys_mat_ca;   //float的容器的容器
+    KeyMat polarcontext_invkeys_to_search_ca;
+    std::unique_ptr<InvKeyTree> polarcontext_tree_ca;
+    KeyMat polarcontext_invkeys_mat_num;   //float的容器的容器
+    KeyMat polarcontext_invkeys_to_search_num;
+    std::unique_ptr<InvKeyTree> polarcontext_tree_num;
 };
