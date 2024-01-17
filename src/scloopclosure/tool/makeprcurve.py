@@ -6,7 +6,7 @@ import pandas as pd
 sc_a_name = 'can-10'
 sc_b_name = 'can-20'
 nd_a_name = 'ca_can-20'
-nd_b_name = 'num_can-20'
+nd_b_name = 'ca_num_best'
 mix_a_name = 'ca_num_can-20_filter-50'
 mix_b_name = 'ca_num_best'
 
@@ -40,11 +40,11 @@ fig = plt.figure()
  
 # 绘制累计频率曲线  
 plt.plot(sc_a_x,sc_a_y,'-r',linewidth = 1,label='SC_' + sc_a_name) 
-plt.plot(sc_b_x,sc_b_y,'-m',linewidth = 1,label='SC_' + sc_b_name) 
+# plt.plot(sc_b_x,sc_b_y,'-m',linewidth = 1,label='SC_' + sc_b_name) 
 plt.plot(nd_a_x,nd_a_y,'-b',linewidth = 1,label='ND_' + nd_a_name) 
 plt.plot(nd_b_x,nd_b_y,'-c',linewidth = 1,label='ND_' + nd_b_name)  
-plt.plot(mix_a_x,mix_a_y,'-y',linewidth = 1,label='MIX_' + mix_a_name)  
-plt.plot(mix_b_x,mix_b_y,'-g',linewidth = 1,label='MIX_' + mix_b_name)  
+# plt.plot(mix_a_x,mix_a_y,'-y',linewidth = 1,label='MIX_' + mix_a_name)  
+# plt.plot(mix_b_x,mix_b_y,'-g',linewidth = 1,label='MIX_' + mix_b_name)  
 
 # plt.plot(x, BB, '-g')   # 绿色实线 
  
