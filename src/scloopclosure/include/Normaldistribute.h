@@ -84,7 +84,7 @@ public:
 
     // tree
     const int    ND_NUM_EXCLUDE_RECENT = 30; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
-    const int    ND_NUM_CANDIDATES_FROM_TREE = 10; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
+    const int    ND_NUM_CANDIDATES_FROM_TREE = 20; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres
     const double ND_SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
@@ -93,7 +93,7 @@ public:
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
 
     // config 
-    const int    TREE_MAKING_PERIOD_ = 10; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
+    const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter = 0;
 
     //data

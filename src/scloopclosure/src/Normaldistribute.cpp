@@ -78,14 +78,13 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
         for(auto &bin_it : ring_it)
         {
             sctor_idx++;
-            // cout << bin_it.size() << " ";
             if(bin_it.size() < 50)      //6->10
             {   
                 bin_it.clear();
                 continue;
             }
 
-            //计算协方差 奇异值
+            // 计算协方差 奇异值
             Eigen::MatrixXd bin_cov_;
             Eigen::MatrixXd bin_singular_;
             bin_cov_ = NDGetCovarMatrix(bin_it);
@@ -107,7 +106,6 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
             desc(ring_idx,sctor_idx) = flat_ratio;
 
         }
-        // cout << endl;
 
     }
 
@@ -117,7 +115,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
             if( desc(row_idx, col_idx) == NO_POINT )
                 desc(row_idx, col_idx) = 0;
 
-    // cout << "[ND] finish make ND descriptor" << endl;
+    // cout << "[ND]  finish make ND descriptor" << endl;
 
     t_making_desc.toc("PolarContext making");
 
@@ -242,13 +240,13 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         loop_id = nn_idx; 
         
         std::cout.precision(3); 
-        cout << "[ND] [Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
+        cout << "[ND]  [Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
         // cout << "[ND] [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
     }
     else
     {
         std::cout.precision(3); 
-        cout << "[ND] [Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
+        cout << "[ND]  [Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
         // cout << "[ND] [Not loop] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
     }
 
@@ -385,19 +383,6 @@ Eigen::MatrixXd NDManager::NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_pio
  
 	return covar;
 }
-
-// template<typename _Tp>
-// void print_matrix(const _Tp* data, const int rows, const int cols)
-// {
-// 	for (int y = 0; y < rows; ++y) {
-// 		for (int x = 0; x < cols; ++x) {
-// 			fprintf(stderr, "  %f  ", static_cast<float>(data[y * cols + x]));
-// 		}
-// 		fprintf(stderr, "\n");
-// 	}
-// 	fprintf(stderr, "\n");
-// }
-
  
 Eigen::MatrixXd NDManager::NDGetSingularvalue(Eigen::MatrixXd bin_cov)
 {

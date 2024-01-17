@@ -1137,6 +1137,30 @@ lio_sam_mapOptmization/fast:
 	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build
 .PHONY : lio_sam_mapOptmization/fast
 
+src/Mixdescriptor.o: src/Mixdescriptor.cpp.o
+.PHONY : src/Mixdescriptor.o
+
+# target to build an object file
+src/Mixdescriptor.cpp.o:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Mixdescriptor.cpp.o
+.PHONY : src/Mixdescriptor.cpp.o
+
+src/Mixdescriptor.i: src/Mixdescriptor.cpp.i
+.PHONY : src/Mixdescriptor.i
+
+# target to preprocess a source file
+src/Mixdescriptor.cpp.i:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Mixdescriptor.cpp.i
+.PHONY : src/Mixdescriptor.cpp.i
+
+src/Mixdescriptor.s: src/Mixdescriptor.cpp.s
+.PHONY : src/Mixdescriptor.s
+
+# target to generate assembly for a file
+src/Mixdescriptor.cpp.s:
+	cd /home/jtcx/remote_control/code/sc_from_scliosam/build && $(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/src/Mixdescriptor.cpp.s
+.PHONY : src/Mixdescriptor.cpp.s
+
 src/Normaldistribute.o: src/Normaldistribute.cpp.o
 .PHONY : src/Normaldistribute.o
 
@@ -1291,6 +1315,9 @@ help:
 	@echo "... tf_generate_messages_nodejs"
 	@echo "... tf_generate_messages_py"
 	@echo "... lio_sam_mapOptmization"
+	@echo "... src/Mixdescriptor.o"
+	@echo "... src/Mixdescriptor.i"
+	@echo "... src/Mixdescriptor.s"
 	@echo "... src/Normaldistribute.o"
 	@echo "... src/Normaldistribute.i"
 	@echo "... src/Normaldistribute.s"

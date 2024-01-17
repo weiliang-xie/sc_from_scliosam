@@ -2304,12 +2304,12 @@ scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/all: scloopclosure/CMakeFile
 scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/all: scloopclosure/CMakeFiles/lio_sam_generate_messages_cpp.dir/all
 	$(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/depend
 	$(MAKE) $(MAKESILENT) -f scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build.make scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=16,17,18,19 "Built target lio_sam_mapOptmization"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles --progress-num=16,17,18,19,20 "Built target lio_sam_mapOptmization"
 .PHONY : scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/all
 
 # Build rule for subdir invocation for target.
 scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles 5
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles 6
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/jtcx/remote_control/code/sc_from_scliosam/build/CMakeFiles 0
 .PHONY : scloopclosure/CMakeFiles/lio_sam_mapOptmization.dir/rule
