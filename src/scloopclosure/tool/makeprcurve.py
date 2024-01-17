@@ -6,7 +6,7 @@ import pandas as pd
 # 用Pandas读取csv格式的文件  
 sc = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_height.csv')
 a = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_filter_50.csv')
-b = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_filter_100.csv')
+b = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_num.csv')
 c = pd.read_csv('../../../data/LOAMNDPRcurve/kitti_00_ca_num.csv')
 d = pd.read_csv('../../../data/LOAMSCPRcurve/kitti_00_can-20.csv')
 
@@ -30,7 +30,7 @@ fig = plt.figure()
 # 绘制累计频率曲线  
 plt.plot(sc_x,sc_y,'-r',linewidth = 1,label='ND_ca_height') 
 plt.plot(a_x,a_y,'-y',linewidth = 1,label='ND_ca_fiter-50')  
-plt.plot(b_x,b_y,'-b',linewidth = 1,label='ND_ca_filter-100')  
+plt.plot(b_x,b_y,'-b',linewidth = 1,label='ND_num')  
 plt.plot(c_x,c_y,'-g',linewidth = 1,label='ND_ca_num')  
 plt.plot(d_x,d_y,'-m',linewidth = 1,label='SC_can-20')  
 
