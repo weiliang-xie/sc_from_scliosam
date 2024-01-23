@@ -86,14 +86,14 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
             // cout << bin_it.size() << " ";
             if(bin_it.size() < 50)      //6->10
             {   
-                double max_high = -1000;
-                for(auto &point_it : bin_it)
-                {
-                    if(point_it[2] > max_high)
-                        max_high = point_it[2];
-                }
-                desc(ring_idx,sctor_idx) = max_high;
-                // desc(ring_idx,sctor_idx) = bin_it.size();
+                // double max_high = -1000;
+                // for(auto &point_it : bin_it)
+                // {
+                //     if(point_it[2] > max_high)
+                //         max_high = point_it[2];
+                // }
+                // desc(ring_idx,sctor_idx) = max_high;
+                desc(ring_idx,sctor_idx) = bin_it.size();
                 bin_it.clear();
                 continue;
             }
@@ -148,8 +148,8 @@ MatrixXd MIXManager::MIXmakeCARingkeyFromScancontext( Eigen::MatrixXd &_desc )
     {
         Eigen::MatrixXd curr_row = _desc.row(row_idx);
         for(int i = 0; i < curr_row.cols(); ++i){
-            if(curr_row(0,i) >= 1 || curr_row(0,i) < 0)
-            // if(curr_row(0,i) >= 1)
+            // if(curr_row(0,i) >= 1 || curr_row(0,i) < 0)
+            if(curr_row(0,i) >= 1)
                 curr_row(0,i) = 0;
         }
         invariant_key(row_idx, 0) = curr_row.mean();    //求解每行的平均值
@@ -170,8 +170,8 @@ MatrixXd MIXManager::MIXmakeNUMRingkeyFromScancontext( Eigen::MatrixXd &_desc )
     {
         Eigen::MatrixXd curr_row = _desc.row(row_idx);
         for(int i = 0; i < curr_row.cols(); ++i){
-            if(curr_row(0,i) < 1 && curr_row(0,i) > 0)
-            // if(curr_row(0,i) < 1)
+            // if(curr_row(0,i) < 1 && curr_row(0,i) > 0)
+            if(curr_row(0,i) < 1)
                 curr_row(0,i) = 0;
         }
         invariant_key(row_idx, 0) = curr_row.mean();    //求解每行的平均值
@@ -192,7 +192,8 @@ MatrixXd MIXManager::MIXmakeSectorkeyFromScancontext( Eigen::MatrixXd &_desc )
     {
         Eigen::MatrixXd curr_col = _desc.col(col_idx);
         for(int i = 0; i < curr_col.rows(); ++i){
-            if(curr_col(i,0) < 1 && curr_col(i,0) > 0){
+            // if(curr_col(i,0) < 1 && curr_col(i,0) > 0){
+            if(curr_col(i,0) < 1){
                 variant_key(0, col_idx) += curr_col(i,0);   //ac
             }else{
                 variant_key(1, col_idx) += curr_col(i,0);   //num
@@ -361,14 +362,14 @@ double MIXManager::MIXdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
 
         for(int row_idx = 0; row_idx < _sc1.rows(); row_idx++)
         {
-            if(_sc1(row_idx,col_idx) < 1 && _sc1(row_idx,col_idx) > 0)
-            // if(_sc1(row_idx,col_idx) < 1)
+            // if(_sc1(row_idx,col_idx) < 1 && _sc1(row_idx,col_idx) > 0)
+            if(_sc1(row_idx,col_idx) < 1)
                 col_sc1_ac(row_idx) = _sc1(row_idx,col_idx);
             else
                 col_sc1_num(row_idx) = _sc1(row_idx,col_idx);              
             
-            if(_sc2(row_idx,col_idx) < 1 && _sc2(row_idx,col_idx) > 0)
-            // if(_sc2(row_idx,col_idx) < 1)
+            // if(_sc2(row_idx,col_idx) < 1 && _sc2(row_idx,col_idx) > 0)
+            if(_sc2(row_idx,col_idx) < 1)
                 col_sc2_ac(row_idx) = _sc2(row_idx,col_idx);
             else
                 col_sc2_num(row_idx) = _sc2(row_idx,col_idx);               
@@ -378,7 +379,7 @@ double MIXManager::MIXdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
         if( (col_sc1_ac.norm() == 0) || (col_sc2_ac.norm() == 0) || (col_sc1_num.norm() == 0) || (col_sc2_num.norm() == 0))
             continue; // don't count this sector pair. 
 
-        double sector_similarity = (col_sc1_ac.dot(col_sc2_ac) / (col_sc1_ac.norm() * col_sc2_ac.norm())) * 0.5 + (col_sc1_num.dot(col_sc2_num) / (col_sc1_num.norm() * col_sc2_num.norm())) * 0.5;
+        double sector_similarity = ((col_sc1_ac.dot(col_sc2_ac) / (col_sc1_ac.norm() * col_sc2_ac.norm())) / 2) + ((col_sc1_num.dot(col_sc2_num) / (col_sc1_num.norm() * col_sc2_num.norm())) / 2);
 
         sum_sector_similarity = sum_sector_similarity + sector_similarity;
         num_eff_cols = num_eff_cols + 1;

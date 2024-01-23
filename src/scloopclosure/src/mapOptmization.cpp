@@ -231,9 +231,9 @@ public:
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
     std::vector<int> loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
-    string sc_pr_data_file = savePCDDirectory + "SCPRcurve/sc_kitti_00.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "NDPRcurve/nd_kitti_00_ca_can-20_filter-50.csv";    //ND pr数据储存地址
-    string mix_pr_data_file = savePCDDirectory + "MIXPRcurve/mix_kitti_00_ca_height_can-20_filter-50.csv";    //MIX pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SCPRcurve/sc_kitti_00_can-20.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "NDPRcurve/nd_kitti_00_aca_can-20_filter-50.csv";    //ND pr数据储存地址
+    string mix_pr_data_file = savePCDDirectory + "MIXPRcurve/mix_kitti_00_aca_num_can-20_filter-50.csv";    //MIX pr数据储存地址
 
 
 
@@ -583,6 +583,8 @@ public:
 
     void saveprcurvedata(const std::string pr_data_file_name, std::vector<std::pair<double,double>> pr_data_queue)
     {
+        if(pr_data_queue.empty())
+            return;
         //写入csv文件
         prFile.open(pr_data_file_name, ios::out);
         // 写入标题行
@@ -601,10 +603,12 @@ public:
         std::vector<std::pair<double,double>> nd_pr_data_queue;
         std::vector<std::pair<double,double>> mix_pr_data_queue;
 
-
-        sc_pr_data_queue = makeprcurvedata(scManager.loopclosure_id_and_dist);
-        nd_pr_data_queue = makeprcurvedata(ndManager.loopclosure_id_and_dist);
-        mix_pr_data_queue = makeprcurvedata(mixManager.loopclosure_id_and_dist);
+        if(scManager.loopclosure_id_and_dist.empty() != 1)
+            sc_pr_data_queue = makeprcurvedata(scManager.loopclosure_id_and_dist);
+        if(ndManager.loopclosure_id_and_dist.empty() != 1)
+            nd_pr_data_queue = makeprcurvedata(ndManager.loopclosure_id_and_dist);
+        if(mixManager.loopclosure_id_and_dist.empty() != 1)
+            mix_pr_data_queue = makeprcurvedata(mixManager.loopclosure_id_and_dist);
 
 
         saveprcurvedata(sc_pr_data_file, sc_pr_data_queue);
@@ -735,13 +739,13 @@ public:
             
             // downsampleCurrentScan();    //降采样处理
 
-            // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
+            SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
             NDsaveKeyFramesAndFactor();     //制作ND描述符
 
             MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
-            // performSCLoopClosure();      //求解SC回环状态
+            performSCLoopClosure();      //求解SC回环状态
 
             NDperformSCLoopClosure();      //求解ND回环状态
 
