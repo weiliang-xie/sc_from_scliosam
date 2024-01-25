@@ -43,6 +43,36 @@ using KeyMat = std::vector<std::vector<float> >;
 using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
 
+
+//椭球模型
+class Ellipsoid{
+public:
+    Ellipsoid(){
+        center = {0};
+        axis.resize(3,3);
+        axis_length.resize(3);
+        point_num = 0;
+    }
+    SCPointType center;                     //椭球中心点
+    Eigen::MatrixXd axis;                   //椭球轴方向
+    std::vector<double> axis_length;        //椭球轴长(目前 = 协方差特征值)
+    int point_num;
+};
+
+class Voxel_Ellipsoid: public Ellipsoid{
+public:
+    Voxel_Ellipsoid(){
+        valid = 0;
+    }
+    bool valid;         //是否为满足评判相似度的椭球模型
+};
+
+class Refer_Ellipsoid: public Ellipsoid{
+public:
+    std::vector<int> id;
+};
+
+
 class NDManager
 {
 public:
@@ -61,6 +91,14 @@ public:
 
     Eigen::MatrixXd NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont);
     Eigen::MatrixXd NDGetSingularvalue(Eigen::MatrixXd bin_cov);
+    std::pair<std::vector<double>,Eigen::MatrixXd> NDGetEigenvalues(Eigen::MatrixXd bin_cov);
+    std::pair<double, int> NDdistancevoxelellipsiod( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can);
+
+    //体素椭球
+    void NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid);
+    double NDDistVoexleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can,int num_shift);
+    void NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id);
+
 
     template<typename _Tp>
     void print_matrix(const _Tp* data, const int rows, const int cols)
@@ -95,6 +133,7 @@ public:
     // config 
     const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter = 0;
+    double       ND_VOXEL_ELIOD_DIST_THRES = 0.2;
 
     //data
     std::vector<double> polarcontexts_timestamp_; // optional.
@@ -107,4 +146,6 @@ public:
     KeyMat polarcontext_invkeys_mat_;   //float的容器的容器
     KeyMat polarcontext_invkeys_to_search_;
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
+
+    std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
 };

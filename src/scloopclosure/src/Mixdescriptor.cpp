@@ -46,7 +46,7 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
 
     SCPointType pt;
     float azim_angle, azim_range; // wihtin 2d plane
-    int ring_idx, sctor_idx;
+    int ring_idx, sector_idx;
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -63,26 +63,26 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
         
         // cout << "[MIX] computer bin index" << endl;
         ring_idx = std::max( std::min( MIX_PC_NUM_RING, int(ceil( (azim_range / MIX_PC_MAX_RADIUS) * MIX_PC_NUM_RING )) ), 1 );    //从1开始
-        sctor_idx = std::max( std::min( MIX_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * MIX_PC_NUM_SECTOR )) ), 1 );
+        sector_idx = std::max( std::min( MIX_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * MIX_PC_NUM_SECTOR )) ), 1 );
         
-        // cout << "printf ring index: " << ring_idx << " sector index: " << sctor_idx << endl;
+        // cout << "printf ring index: " << ring_idx << " sector index: " << sector_idx << endl;
         Eigen::Vector3d piont_data = {pt.x,pt.y,pt.z};
-        nd_uint_point_queue[ring_idx - 1][sctor_idx - 1].push_back(piont_data);
+        nd_uint_point_queue[ring_idx - 1][sector_idx - 1].push_back(piont_data);
     }
 
     // cout << "[MIX] finish point classcify" << endl;
 
 
     ring_idx = -1;
-    sctor_idx = -1;
+    sector_idx = -1;
     //单元均值
     for(auto &ring_it : nd_uint_point_queue)
     {
-        sctor_idx = -1;
+        sector_idx = -1;
         ring_idx++;
         for(auto &bin_it : ring_it)
         {
-            sctor_idx++;
+            sector_idx++;
             // cout << bin_it.size() << " ";
             if(bin_it.size() < 50)      //6->10
             {   
@@ -92,8 +92,8 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
                 //     if(point_it[2] > max_high)
                 //         max_high = point_it[2];
                 // }
-                // desc(ring_idx,sctor_idx) = max_high;
-                desc(ring_idx,sctor_idx) = bin_it.size();
+                // desc(ring_idx,sector_idx) = max_high;
+                desc(ring_idx,sector_idx) = bin_it.size();
                 bin_it.clear();
                 continue;
             }
@@ -107,7 +107,7 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
             bin_singular.push_back(bin_singular_);
 
             //计算椭球扁平程度
-            double flat_ratio;
+            double flat_ratio = 0;
             if(bin_singular_.cols() != 1){
                 cout << "The singular value is error !!!" << endl;
             }else{
@@ -117,7 +117,7 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
             }
             
             //填充描述矩阵
-            desc(ring_idx,sctor_idx) = flat_ratio;
+            desc(ring_idx,sector_idx) = flat_ratio;
 
         }
         // cout << endl;

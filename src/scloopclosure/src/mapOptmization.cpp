@@ -231,9 +231,9 @@ public:
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
     std::vector<int> loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
-    string sc_pr_data_file = savePCDDirectory + "SCPRcurve/sc_kitti_00_can-20.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "NDPRcurve/nd_kitti_00_aca_can-20_filter-50.csv";    //ND pr数据储存地址
-    string mix_pr_data_file = savePCDDirectory + "MIXPRcurve/mix_kitti_00_aca_num_can-20_filter-50.csv";    //MIX pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_00_can-20_change-can-index.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_00_ca_ve-test_can-20_filter-50.csv";    //ND pr数据储存地址
+    string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_00_ca_num_can-20_filter-50.csv";    //MIX pr数据储存地址
 
 
 
@@ -282,27 +282,27 @@ public:
         int unused = system((std::string("exec rm -r ") + savePCDDirectory).c_str());
         unused = system((std::string("mkdir ") + savePCDDirectory).c_str());
 
-        saveSCDDirectory = savePCDDirectory + "SCDs/"; // SCD: scan context descriptor 
+        saveSCDDirectory = savePCDDirectory + "SC/SCDs/"; // SCD: scan context descriptor 
         unused = system((std::string("exec rm -r ") + saveSCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + saveSCDDirectory).c_str());
 
-        NDsaveSCDDirectory = savePCDDirectory + "NDSCDs/"; // SCD: scan context descriptor 
+        NDsaveSCDDirectory = savePCDDirectory + "ND/SCDs/"; // SCD: scan context descriptor 
         unused = system((std::string("exec rm -r ") + NDsaveSCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + NDsaveSCDDirectory).c_str());
 
-        MIXsaveSCDDirectory = savePCDDirectory + "MIXSCDs/"; // SCD: scan context descriptor 
+        MIXsaveSCDDirectory = savePCDDirectory + "MIX/SCDs/"; // SCD: scan context descriptor 
         unused = system((std::string("exec rm -r ") + MIXsaveSCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + MIXsaveSCDDirectory).c_str());
 
-        saveNodePCDDirectory = savePCDDirectory + "Scans/";
+        saveNodePCDDirectory = savePCDDirectory + "SC/Scans/";
         unused = system((std::string("exec rm -r ") + saveNodePCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + saveNodePCDDirectory).c_str());
 
-        NDsaveNodePCDDirectory = savePCDDirectory + "NDScans/";
+        NDsaveNodePCDDirectory = savePCDDirectory + "ND/Scans/";
         unused = system((std::string("exec rm -r ") + NDsaveNodePCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + NDsaveNodePCDDirectory).c_str());
 
-        MIXsaveNodePCDDirectory = savePCDDirectory + "MIXScans/";
+        MIXsaveNodePCDDirectory = savePCDDirectory + "MIX/Scans/";
         unused = system((std::string("exec rm -r ") + MIXsaveNodePCDDirectory).c_str());
         unused = system((std::string("mkdir -p ") + MIXsaveNodePCDDirectory).c_str());
 
@@ -739,17 +739,17 @@ public:
             
             // downsampleCurrentScan();    //降采样处理
 
-            SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
+            // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
             NDsaveKeyFramesAndFactor();     //制作ND描述符
 
-            MIXsaveKeyFramesAndFactor();    //制作MIX描述符
+            // MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
-            performSCLoopClosure();      //求解SC回环状态
+            // performSCLoopClosure();      //求解SC回环状态
 
             NDperformSCLoopClosure();      //求解ND回环状态
 
-            MIXperformSCLoopClosure();      //求解MIX回环状态
+            // MIXperformSCLoopClosure();      //求解MIX回环状态
 
             publishFrames();             //发布路径
 

@@ -1,12 +1,14 @@
 #include "Normaldistribute.h"
 #include "Scancontext.h"
-#include <cmath>
 
+#include <cmath>
 #include <math.h>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <Eigen/Dense>
+
+using namespace std;
 
 void NDManager::NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
@@ -34,14 +36,10 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
     int num_pts_scan_down = _scan_cloud.points.size();
     std::vector<std::vector<std::vector<Eigen::Vector3d> > > nd_uint_point_queue
                                                             (ND_PC_NUM_RING,std::vector<std::vector<Eigen::Vector3d> >(ND_PC_NUM_SECTOR,std::vector<Eigen::Vector3d>(0)));  //单元内的点的数组
-    std::vector<Eigen::MatrixXd> bin_cov;   //单个描述符的单元协方差序列
-    std::vector<Eigen::MatrixXd> bin_singular;   //单个描述符的单元奇异值序列
-
-
 
     SCPointType pt;
     float azim_angle, azim_range; // wihtin 2d plane
-    int ring_idx, sctor_idx;
+    int ring_idx, sector_idx;
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -58,56 +56,76 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
         
         // cout << "[ND] computer bin index" << endl;
         ring_idx = std::max( std::min( ND_PC_NUM_RING, int(ceil( (azim_range / ND_PC_MAX_RADIUS) * ND_PC_NUM_RING )) ), 1 );    //从1开始
-        sctor_idx = std::max( std::min( ND_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * ND_PC_NUM_SECTOR )) ), 1 );
+        sector_idx = std::max( std::min( ND_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * ND_PC_NUM_SECTOR )) ), 1 );
         
-        // cout << "printf ring index: " << ring_idx << " sector index: " << sctor_idx << endl;
+        // cout << "printf ring index: " << ring_idx << " sector index: " << sector_idx << endl;
         Eigen::Vector3d piont_data = {pt.x,pt.y,pt.z};
-        nd_uint_point_queue[ring_idx - 1][sctor_idx - 1].push_back(piont_data);
+        nd_uint_point_queue[ring_idx - 1][sector_idx - 1].push_back(piont_data);
     }
 
     // cout << "[ND] finish point classcify" << endl;
 
 
+    //点云处理
+    std::vector<Eigen::MatrixXd> bin_cov;   //单个描述符的单元协方差序列 暂未用上
+    std::vector<Eigen::MatrixXd> bin_singular;   //单个描述符的单元奇异值序列 暂未用上
+    std::vector<class Voxel_Ellipsoid> cloud_voxel_eloid_(0);
+
     ring_idx = -1;
-    sctor_idx = -1;
-    //单元均值
+    sector_idx = -1;
+    //顺序遍历体素
     for(auto &ring_it : nd_uint_point_queue)
     {
-        sctor_idx = -1;
+        sector_idx = -1;
         ring_idx++;
         for(auto &bin_it : ring_it)
         {
-            sctor_idx++;
-            if(bin_it.size() < 50)      //6->10
+            class Voxel_Ellipsoid bin_eloid;
+
+            sector_idx++;
+            bin_eloid.point_num = bin_it.size();
+            if(bin_it.size() < 50)
             {   
+                bin_eloid.valid = 0;       //体素椭球为无效模型 筛选小于一定数量的椭球
+                cloud_voxel_eloid_.push_back(bin_eloid);  
                 bin_it.clear();
                 continue;
-            }
-
-            // 计算协方差 奇异值
-            Eigen::MatrixXd bin_cov_;
-            Eigen::MatrixXd bin_singular_;
-            bin_cov_ = NDGetCovarMatrix(bin_it);
-            bin_cov.push_back(bin_cov_);
-            bin_singular_ = NDGetSingularvalue(bin_cov_);
-            bin_singular.push_back(bin_singular_);
-
-            //计算椭球扁平程度
-            double flat_ratio;
-            if(bin_singular_.cols() != 1){
-                cout << "The singular value is error !!!" << endl;
             }else{
-                if(bin_singular_(2,0) != 0)
-                    flat_ratio = bin_singular_(2,0) / bin_singular_(0,0);
-                else flat_ratio = 0;
+                   // 计算协方差 奇异值
+                Eigen::MatrixXd bin_cov_;
+                Eigen::MatrixXd bin_singular_;
+                bin_cov_ = NDGetCovarMatrix(bin_it);
+                bin_cov.push_back(bin_cov_);
+                bin_singular_ = NDGetSingularvalue(bin_cov_);
+                bin_singular.push_back(bin_singular_);
+
+                //构建点云的体素椭球
+                std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
+                bin_eigen_ = NDGetEigenvalues(bin_cov_);
+                bin_eloid.axis_length = bin_eigen_.first;
+                bin_eloid.axis = bin_eigen_.second;
+                NDFilterVoxelellipsoid(bin_eloid);
+                cloud_voxel_eloid_.push_back(bin_eloid);    
+
+                //计算椭球扁平程度
+                double flat_ratio = 0;
+                if(bin_singular_.cols() != 1){
+                    cout << "The singular value is error !!!" << endl;
+                }else{
+                    if(bin_singular_(2,0) != 0)
+                        flat_ratio = bin_singular_(2,0) / bin_singular_(0,0);
+                    else flat_ratio = 0;
+                }
+
+                //填充描述矩阵
+                desc(ring_idx,sector_idx) = flat_ratio;
             }
-            
-            //填充描述矩阵
-            desc(ring_idx,sctor_idx) = flat_ratio;
-
         }
-
     }
+
+    //传入序列 储存当帧点云体素椭球
+    cloud_voxel_eloid.push_back(cloud_voxel_eloid_);
+    NDSaveVoxelellipsoidData(cloud_voxel_eloid_, cloud_voxel_eloid.size()-1); // 保存当帧体素椭球数据
 
     //将无点的网格描述值 = 0
     for ( int row_idx = 0; row_idx < desc.rows(); row_idx++ )
@@ -175,6 +193,8 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
     auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
     auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
+    auto curr_veloid = cloud_voxel_eloid.back();                                        //取出体素椭球序列,最近的
+
 
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
     if( tree_making_period_conter % TREE_MAKING_PERIOD_ == 0) // to save computation cost
@@ -213,7 +233,9 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     for ( int candidate_iter_idx = 0; candidate_iter_idx < ND_NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
         MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
-        std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
+        std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
+        // std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
+        std::pair<double, int> sc_dist_result = NDdistancevoxelellipsiod(curr_desc, polarcontext_candidate, curr_veloid, voxel_eloid_candidate);
         
         double candidate_dist = sc_dist_result.first;
         int candidate_align = sc_dist_result.second;
@@ -384,6 +406,7 @@ Eigen::MatrixXd NDManager::NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_pio
 	return covar;
 }
  
+//奇异值分解
 Eigen::MatrixXd NDManager::NDGetSingularvalue(Eigen::MatrixXd bin_cov)
 {
 	const int rows = bin_cov.rows();
@@ -414,3 +437,174 @@ Eigen::MatrixXd NDManager::NDGetSingularvalue(Eigen::MatrixXd bin_cov)
  
 	return singular_values;
 }
+
+//特征值分解 返回值为降序
+std::pair<std::vector<double>,Eigen::MatrixXd> NDManager::NDGetEigenvalues(Eigen::MatrixXd bin_cov)
+{
+    // cout << "Here is a 3x3 matrix, bin_cov:" << endl << bin_cov << endl << endl;
+    EigenSolver<Matrix3d> es(bin_cov);
+	
+	Matrix3d D = es.pseudoEigenvalueMatrix();
+	Matrix3d V = es.pseudoEigenvectors();
+	// cout << "The pseudo-eigenvalue matrix D is:" << endl << D << endl;
+	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+
+    //特征值 特征向量 排序
+    for(int i = 0; i < D.cols(); i++)
+    {
+        for(int j = 0; j < D.cols()-1; j++)
+        {
+            if(D(j,j) < D(j+1,j+1))
+            {
+                double mid_value;
+                Eigen::Vector3d mid_col;
+                //D
+                mid_value = D(j,j);
+                D(j,j) = D(j+1,j+1);
+                D(j+1,j+1) = mid_value;
+                //V
+                mid_col = V.col(j);
+                V.col(j) = V.col(j+1);
+                V.col(j+1) = mid_col;
+            }
+        }
+    }
+	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+
+    //特征值赋值到vector
+    std::vector<double> eigen_value;
+    eigen_value.resize(D.cols());
+    for(int i = 0; i < D.cols(); i++) { eigen_value[i] = D(i,i); }
+    // std::cout << "eigen value: " << eigen_value[0] << " " << eigen_value[1] << " " << eigen_value[2] << endl;
+
+    //将特征值和特征向量用pair形式返回
+    std::pair<std::vector<double>,Eigen::MatrixXd> result = {eigen_value,V};
+
+    return result;
+}
+
+//体素椭球筛选 暂不对形状进行筛选
+void NDManager::NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid)
+{
+    if(1)
+    {
+        voxeleloid.valid = 1;
+    }
+}
+
+//体素重合度计算
+double NDManager::NDDistVoexleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can,int num_shift)
+{
+    double num_overlap_eloid = 0;
+    double all_valid_eloid = 0;
+    int can_id, cur_id;
+    // cout << "shift num is:" << num_shift << endl;
+    for(int i = 0; i < ND_PC_NUM_RING * ND_PC_NUM_SECTOR; i++)
+    {
+        //偏移候选体素椭球id
+        can_id = (i % ND_PC_NUM_SECTOR + num_shift) % ND_PC_NUM_SECTOR + (i - i % ND_PC_NUM_SECTOR);
+        cur_id = i;
+
+        if(v_eloid_cur[cur_id].valid == 1 || v_eloid_can[can_id].valid == 1)
+        {
+            double dist = 0;
+            if(v_eloid_cur[cur_id].valid == 1 && v_eloid_can[can_id].valid == 1)
+            {
+                for(int ii = 0; ii < v_eloid_cur[cur_id].axis_length.size(); ii++)
+                {
+                    // cout << "cur id: " << cur_id << " cur length: " << v_eloid_cur[cur_id].axis_length[ii] 
+                    //      << " can id: " << can_id << " can length: " << v_eloid_can[can_id].axis_length[ii] << endl;
+                    dist += (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]) * (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]);
+                }
+                dist = sqrt(dist);
+                // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  distance: " << dist << endl;
+
+                if(dist < ND_VOXEL_ELIOD_DIST_THRES)
+                    num_overlap_eloid++;
+            }
+
+            all_valid_eloid++;
+        }
+    }
+    // cout << "all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
+
+    return (double)(1- (num_overlap_eloid / all_valid_eloid));
+    
+}
+
+std::pair<double, int> NDManager::NDdistancevoxelellipsiod( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can)
+{
+    // 1. fast align using variant key (not in original IROS18)
+    MatrixXd vkey_sc1 = NDmakeSectorkeyFromScancontext( _sc1 );   //计算列的均值并以行的形式返回整个矩阵的列向量均值
+    MatrixXd vkey_sc2 = NDmakeSectorkeyFromScancontext( _sc2 );
+    int argmin_vkey_shift = NDfastAlignUsingVkey( vkey_sc1, vkey_sc2 );   //将列均值向右移动并使用F-范数进行对比，返回偏移值
+
+    const int SEARCH_RADIUS = round( 0.5 * ND_SEARCH_RATIO * _sc1.cols() ); // a half of search range  //搜索范围
+    std::vector<int> shift_idx_search_space { argmin_vkey_shift };
+    for ( int ii = 1; ii < SEARCH_RADIUS + 1; ii++ )
+    {
+        shift_idx_search_space.push_back( (argmin_vkey_shift + ii + _sc1.cols()) % _sc1.cols() );
+        shift_idx_search_space.push_back( (argmin_vkey_shift - ii + _sc1.cols()) % _sc1.cols() );
+    }
+    std::sort(shift_idx_search_space.begin(), shift_idx_search_space.end());    //在vector中填入以获取到的偏移量为中心，前后范围为搜索范围的待匹配偏移量
+
+    // 2. fast columnwise diff 
+    int argmin_shift = 0;
+    double min_sc_dist = 10000000;
+    for ( int num_shift: shift_idx_search_space )
+    {
+        // MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
+        double cur_sc_dist = NDDistVoexleloid( v_eloid_cur, v_eloid_can, num_shift); //计算椭球重叠率
+        if( cur_sc_dist < min_sc_dist )
+        {
+            argmin_shift = num_shift;
+            min_sc_dist = cur_sc_dist;
+        }
+    }
+
+    return make_pair(min_sc_dist, argmin_shift);
+
+} // distanceBtnScanContext
+
+
+
+//体素椭球数据保存函数
+void NDManager::NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id)
+{
+    static int init = 0;
+    std::ostringstream out;
+    out << std::internal << std::setfill('0') << std::setw(6) << id;
+    string v_eloid_id = out.str();
+    string voxel_ellipsiod_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod/CloudData/";    //体素椭球数据储存地址
+    if(!init)
+    {
+        int unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("mkdir ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("mkdir -p ") + voxel_ellipsiod_data_route).c_str());
+        init += 1;
+    }
+
+    string voxel_ellipsiod_data_file = voxel_ellipsiod_data_route + v_eloid_id + ".csv";
+
+    ofstream outFile;
+    outFile.open(voxel_ellipsiod_data_file, ios::out);
+    outFile << "ID" << ',' << "valid" << ',' << "num" << ',' << "a" << ',' << "b" << ',' << "c" << ',' << endl; 
+    int id_index = 0;
+    for(auto &data_it : v_eloid_data)
+    {
+        outFile << id_index << ',' << data_it.valid << ',' << data_it.point_num << ',' 
+                << data_it.axis_length[0] << ',' << data_it.axis_length[1] << ',' << data_it.axis_length[2] << ',' << endl; 
+        id_index++;
+    }   
+
+    outFile.close();
+} 
+
+// //体素椭球结果保存函数
+// void NDManager::NDSaveVoxelellipsoidResult(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id)
+// {
+    
+// }

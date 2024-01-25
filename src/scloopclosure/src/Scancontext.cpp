@@ -160,7 +160,7 @@ MatrixXd SCManager::makeScancontext( pcl::PointCloud<SCPointType> & _scan_down )
 
     SCPointType pt;
     float azim_angle, azim_range; // wihtin 2d plane
-    int ring_idx, sctor_idx;
+    int ring_idx, sector_idx;
     for (int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
         pt.x = _scan_down.points[pt_idx].x;                 //循环获取帧内各点
@@ -176,11 +176,11 @@ MatrixXd SCManager::makeScancontext( pcl::PointCloud<SCPointType> & _scan_down )
             continue;
 
         ring_idx = std::max( std::min( PC_NUM_RING, int(ceil( (azim_range / PC_MAX_RADIUS) * PC_NUM_RING )) ), 1 );
-        sctor_idx = std::max( std::min( PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * PC_NUM_SECTOR )) ), 1 );
+        sector_idx = std::max( std::min( PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * PC_NUM_SECTOR )) ), 1 );
 
         // taking maximum z //更新矩阵描述值，单元格内的最大高度
-        if ( desc(ring_idx-1, sctor_idx-1) < pt.z ) // -1 means cpp starts from 0
-            desc(ring_idx-1, sctor_idx-1) = pt.z; // update for taking maximum value at that bin
+        if ( desc(ring_idx-1, sector_idx-1) < pt.z ) // -1 means cpp starts from 0
+            desc(ring_idx-1, sector_idx-1) = pt.z; // update for taking maximum value at that bin
     }
 
     // reset no points to zero (for cosine dist later)  //将无点的网格描述值 = 0
