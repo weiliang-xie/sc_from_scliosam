@@ -6,7 +6,7 @@ import pandas as pd
 sc_a_name = 'can-20_change-can-index'
 sc_b_name = 'can-20'
 nd_a_name = 'ca_ve-0.2_can-20_filter-50'
-nd_b_name = 'ca_ve-0.3_can-20_filter-50'
+nd_b_name = 'ca_ve-test_can-20_filter-50'
 mix_a_name = 'ca_num_can-20_filter-50'
 mix_b_name = 'ca_num_best'
 

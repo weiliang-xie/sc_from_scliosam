@@ -397,6 +397,115 @@ public:
         edges_str.emplace_back(curEdgeInfo);    //与push_back()基本一致
     }
 
+    template<typename T>
+    T test_load_csv_descriptor(const std::string & path) 
+    {
+        std::ifstream in;
+        in.open(path);
+        std::string line;
+        std::vector<double> values;
+        uint rows = 0;
+        while (std::getline(in, line))
+        {
+            std::stringstream ss(line);
+
+	            string token;			// 接收缓冲区
+	            while (getline(ss, token, ' '))	// 以split为分隔符
+	            {
+	            	double val = std::stod(token);
+                    values.push_back(val);
+	            }
+            ++rows;
+        }
+        return Eigen::Map<const Eigen::Matrix<
+            typename T::Scalar, 
+            T::RowsAtCompileTime, 
+            T::ColsAtCompileTime,
+            RowMajor>>(values.data(), rows, values.size() / rows);
+    }
+
+    std::vector<class Voxel_Ellipsoid>  test_load_csv_voxel_eloid(const std::string & path) 
+    {
+        std::ifstream in;
+        in.open(path);
+        std::string line;
+        std::vector<double> values;
+        std::vector<class Voxel_Ellipsoid> cloud_eloid;
+        uint rows = 0;
+        while (std::getline(in, line))
+        {
+            if(line == "ID,valid,num,a,b,c,a-mean,a-mean,a-mean,a-axis-x,a-axis-y,a-axis-z,b-axis-x,b-axis-y,b-axis-z,c-axis-x,c-axis-y,c-axis-z,")
+            {   
+                // cout << "first line" << endl;
+                continue;
+            }
+
+            std::stringstream ss(line);
+	        string token;			// 接收缓冲区
+            int cnt = 0;
+            class Voxel_Ellipsoid bin_eloid;
+	        while (getline(ss, token, ','))
+	        {
+                // cout << token << endl;
+                double val = std::stod(token);
+                switch (cnt)
+                {
+                    case 0:
+                        break;
+                    case 1:
+                        bin_eloid.valid = (bool)val;
+                        break;
+                    case 2:
+                        bin_eloid.point_num = (int)val;
+                        break;
+                    case 3:
+                        bin_eloid.axis_length[0] = val;
+                        break;
+                    case 4:
+                        bin_eloid.axis_length[1] = val;
+                        break;
+                    case 5:
+                        bin_eloid.axis_length[2] = val;
+                        break;
+                    case 6:
+                        bin_eloid.center.x = (float)val;
+                        break;
+                    case 7:
+                        bin_eloid.center.y = (float)val;
+                        break;
+                    case 8:
+                        bin_eloid.center.z = (float)val;
+                        break;
+                    case 9:
+                        break;
+                    case 10:
+                        break;
+                }
+                if (bin_eloid.valid == 0 && cnt == 1)
+                    break;
+                cnt++;
+	        }
+            // cout << "cnt: " << cnt << endl;
+            ++rows;
+            cloud_eloid.push_back(bin_eloid);
+        }
+        return cloud_eloid;
+    }
+
+    void testcode()
+    {
+        MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/003741.scd");
+        MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000807.scd");
+
+        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/003741.csv");
+        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/000807.csv");
+        
+        cout << "cur_eloid num:" << cur_eloid.size() << endl;
+
+        ndManager.NDdistancevoxeleloid(cur_des,can_des,cur_eloid,can_eloid);
+
+    }
+
     //获取pose真值
     void getposegroundtruth()
     {
@@ -1429,6 +1538,8 @@ int main(int argc, char** argv)
     // Eigen::MatrixXd cov;
     // cov = MO.ndManager.NDGetCovarMatrix(piont);
     // MO.ndManager.NDGetSingularvalue(cov);
+
+    // MO.testcode();
 
     ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     
