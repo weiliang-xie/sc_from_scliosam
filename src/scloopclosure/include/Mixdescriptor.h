@@ -24,6 +24,7 @@
 
 #include "nanoflann.hpp"
 #include "KDTreeVectorOfVectorsAdaptor.h"
+#include "Normaldistribute.h"
 
 #include "tictoc.h"
 
@@ -60,8 +61,16 @@ public:
 
     const Eigen::MatrixXd& MIXgetConstRefRecentSCD(void);
 
-    Eigen::MatrixXd MIXGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont);
+    //体素椭球
+    std::pair<Eigen::MatrixXd, Eigen::MatrixXd> MIXGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont);
     Eigen::MatrixXd MIXGetSingularvalue(Eigen::MatrixXd bin_cov);
+    std::pair<std::vector<double>,Eigen::MatrixXd> MIXGetEigenvalues(Eigen::MatrixXd bin_cov);
+    std::pair<double, int> MIXdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can);
+    bool MIXFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid);
+    double MIXDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
+    class Voxel_Ellipsoid MIXMergeVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col);
+    double MIXDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
+    void MIXSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id);
 
     template<typename _Tp>
     void print_matrix(const _Tp* data, const int rows, const int cols)
@@ -97,6 +106,8 @@ public:
     const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter_ca = 0;
     int          tree_making_period_conter_num = 0;
+    double       MIX_VOXEL_ELIOD_DIST_THRES = 1;
+    double       MIX_VOXEL_ELIOD_COS_THRES = 1;
 
     //data
     std::vector<double> polarcontexts_timestamp_; // optional.
@@ -113,4 +124,6 @@ public:
     KeyMat polarcontext_invkeys_mat_num;   //float的容器的容器
     KeyMat polarcontext_invkeys_to_search_num;
     std::unique_ptr<InvKeyTree> polarcontext_tree_num;
+
+    std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
 };

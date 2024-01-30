@@ -223,6 +223,7 @@ public:
     std::string MIXsaveNodePCDDirectory;
 
     //xwl 修改添加
+    string data_set_sq = "00";
     int16_t laser_cloud_frame_number;   //实时更新的当前帧id
     Eigen::MatrixXd sc_pose_origin;
     Eigen::MatrixXd sc_pose_change;
@@ -231,9 +232,9 @@ public:
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
     std::vector<int> loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
-    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_00_can-20_change-can-index.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_00_ca_ve-test_can-20_filter-50.csv";    //ND pr数据储存地址
-    string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_00_ca_num_can-20_filter-50.csv";    //MIX pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_can-20_gt-small.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_ca_ve-test_can-40.csv";    //ND pr数据储存地址
+    string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_" + data_set_sq + "_ca_num_ve-test_can-20.csv";    //MIX pr数据储存地址
 
 
 
@@ -434,7 +435,7 @@ public:
         uint rows = 0;
         while (std::getline(in, line))
         {
-            if(line == "ID,valid,num,a,b,c,a-mean,a-mean,a-mean,a-axis-x,a-axis-y,a-axis-z,b-axis-x,b-axis-y,b-axis-z,c-axis-x,c-axis-y,c-axis-z,")
+            if(line == "ID,valid,num,a,b,c,a-mean,a-mean,a-mean,mode,a-axis-x,a-axis-y,a-axis-z,b-axis-x,b-axis-y,b-axis-z,c-axis-x,c-axis-y,c-axis-z,")
             {   
                 // cout << "first line" << endl;
                 continue;
@@ -477,6 +478,7 @@ public:
                         bin_eloid.center.z = (float)val;
                         break;
                     case 9:
+                        bin_eloid.mode = (int)val;
                         break;
                     case 10:
                         break;
@@ -494,15 +496,22 @@ public:
 
     void testcode()
     {
-        MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/003741.scd");
-        MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000807.scd");
+        int cur = 1567;
+        int can = 122;
+        // MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/001567.scd");
+        // MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000122.scd");
 
-        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/003741.csv");
-        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/000807.csv");
+        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/001567.csv");
+        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/000122.csv");
         
         cout << "cur_eloid num:" << cur_eloid.size() << endl;
 
-        ndManager.NDdistancevoxeleloid(cur_des,can_des,cur_eloid,can_eloid);
+        Eigen::Vector3d a =  ndManager.NDDistMergeVoxelellipsoid(cur_eloid,can_eloid,1);
+
+        cout << "gt center vector: " << endl;
+        cout << pose_ground_truth[cur](0,3) - pose_ground_truth[can](0,3) << endl
+             << pose_ground_truth[cur](1,3) - pose_ground_truth[can](1,3) << endl
+             << pose_ground_truth[cur](2,3) - pose_ground_truth[can](2,3) << endl;
 
     }
 
@@ -579,18 +588,18 @@ public:
     void getloopclosuregt(void)
     {
         
-        for(auto it = pose_ground_truth.begin(); it != pose_ground_truth.end(); it++)
+        for(int i = 0; i < pose_ground_truth.size(); i++)
         {
-            int cur_index = static_cast<int>(it - pose_ground_truth.begin());
+            int cur_index = i;
             // cout << "cur index: " << cur_index << endl;
             if(cur_index < 50) continue;  //前50帧不进行回环判断
             Eigen::Matrix4d pose_matrix;
             double distance = 0;
             double cur_x, cur_y;
 
-            pose_matrix = *it;
-            cur_x = pose_matrix(0,3);
-            cur_y = pose_matrix(2,3);
+            // pose_matrix = *it;
+            cur_x = pose_ground_truth[i](0,3);
+            cur_y = pose_ground_truth[i](2,3);
 
 
             for(int i = 0; i < cur_index - 50; i++)
@@ -602,7 +611,7 @@ public:
                 // distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y) + (his_z-cur_z)*(his_z-cur_z));
                 distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
                 // cout << "cur and his distance: " << distance << endl;
-                if (distance <= 10)
+                if (distance <= 5)
                 {
                     loopclosure_gt_index.push_back(cur_index);
                     break; 
@@ -610,6 +619,12 @@ public:
             }
         }
         cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
+        //打印真值ID
+        // for(auto &gt_data : loopclosure_gt_index)
+        // {
+        //     cout << gt_data << " ";
+        // }
+        // cout <<endl;
         cout << "finish get loop closure gt" << endl;
     }
 
@@ -722,7 +737,7 @@ public:
 
         saveprcurvedata(sc_pr_data_file, sc_pr_data_queue);
         saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
-        saveprcurvedata(mix_pr_data_file, nd_pr_data_queue);
+        saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
     }
 
 
@@ -868,8 +883,9 @@ public:
         // if(laserCloudRaw->points.empty())
         //     cout << "laser cloud is empty!" << endl;    //有效        
 
-        //接收完数据后进行pr计算
-        if(laser_cloud_frame_number == 4541)
+        //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
+        int16_t sq_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
+        if(laser_cloud_frame_number == sq_num)
             makeandsaveprcurve();
     }
 
@@ -1539,7 +1555,7 @@ int main(int argc, char** argv)
     // cov = MO.ndManager.NDGetCovarMatrix(piont);
     // MO.ndManager.NDGetSingularvalue(cov);
 
-    // MO.testcode();
+    MO.testcode();
 
     ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     

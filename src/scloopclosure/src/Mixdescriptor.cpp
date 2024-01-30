@@ -1,12 +1,15 @@
 #include "Mixdescriptor.h"
 #include "Scancontext.h"
 #include <cmath>
-
 #include <math.h>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <Eigen/Dense>
+
+#include <numeric>
+
+using namespace std;
 
 void MIXManager::MIXmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
@@ -72,6 +75,8 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
 
     // cout << "[MIX] finish point classcify" << endl;
 
+    //点云处理
+    std::vector<class Voxel_Ellipsoid> cloud_voxel_eloid_(0);
 
     ring_idx = -1;
     sector_idx = -1;
@@ -83,46 +88,56 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
         for(auto &bin_it : ring_it)
         {
             sector_idx++;
-            // cout << bin_it.size() << " ";
-            if(bin_it.size() < 50)      //6->10
-            {   
-                // double max_high = -1000;
-                // for(auto &point_it : bin_it)
-                // {
-                //     if(point_it[2] > max_high)
-                //         max_high = point_it[2];
-                // }
-                // desc(ring_idx,sector_idx) = max_high;
-                desc(ring_idx,sector_idx) = bin_it.size();
-                bin_it.clear();
-                continue;
+            class Voxel_Ellipsoid bin_eloid;
+            if(bin_it.size()){           
+                std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
+                bin_eloid.point_num = bin_it.size();
+                bin_mean_cov_ = MIXGetCovarMatrix(bin_it);
+
+                //构建点云的体素椭球
+                std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
+                //均值填充
+                bin_eloid.center.x = bin_mean_cov_.first(0,0);
+                bin_eloid.center.y = bin_mean_cov_.first(0,1);
+                bin_eloid.center.z = bin_mean_cov_.first(0,2);
+                bin_eloid.cov = bin_mean_cov_.second;
+
+                bin_eigen_ = MIXGetEigenvalues(bin_eloid.cov);
+                bin_eloid.axis_length = bin_eigen_.first;
+                bin_eloid.axis = bin_eigen_.second;
+
+                if(!MIXFilterVoxelellipsoid(bin_eloid)) 
+                {   
+                    desc(ring_idx,sector_idx) = bin_it.size();
+                    //体素椭球为无效模型 筛选小于一定数量的椭球
+                    // bin_it.clear();
+                }else{   
+
+                    //计算椭球扁平程度
+                    double flat_ratio = 0;
+                    if(bin_eloid.axis_length.size() != 3){
+                        cout << "The singular value is error !!!" << endl;
+                    }else{
+                        if(bin_eloid.axis_length[2] != 0)
+                            flat_ratio = bin_eloid.axis_length[2] / bin_eloid.axis_length[0];
+                        else flat_ratio = 0;
+                    }
+
+                    //填充描述矩阵
+                    desc(ring_idx,sector_idx) = flat_ratio;
+                }
             }
 
-            //计算协方差 奇异值
-            Eigen::MatrixXd bin_cov_;
-            Eigen::MatrixXd bin_singular_;
-            bin_cov_ = MIXGetCovarMatrix(bin_it);
-            bin_cov.push_back(bin_cov_);
-            bin_singular_ = MIXGetSingularvalue(bin_cov_);
-            bin_singular.push_back(bin_singular_);
-
-            //计算椭球扁平程度
-            double flat_ratio = 0;
-            if(bin_singular_.cols() != 1){
-                cout << "The singular value is error !!!" << endl;
-            }else{
-                if(bin_singular_(2,0) != 0)
-                    flat_ratio = bin_singular_(2,0) / bin_singular_(0,0);
-                else flat_ratio = 0;
-            }
-            
-            //填充描述矩阵
-            desc(ring_idx,sector_idx) = flat_ratio;
+            cloud_voxel_eloid_.push_back(bin_eloid);    //储存单个体素椭球模型
 
         }
         // cout << endl;
 
     }
+
+    //传入序列 储存当帧点云体素椭球
+    cloud_voxel_eloid.push_back(cloud_voxel_eloid_);
+    MIXSaveVoxelellipsoidData(cloud_voxel_eloid_, cloud_voxel_eloid.size()-1); // 保存当帧体素椭球数据
 
     //将无点的网格描述值 = 0
     for ( int row_idx = 0; row_idx < desc.rows(); row_idx++ )
@@ -229,6 +244,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     auto curr_key_ca = polarcontext_invkeys_mat_ca.back(); // current observation (query)    //取出vector格式的ac-ring键值
     auto curr_key_num = polarcontext_invkeys_mat_num.back(); // current observation (query)    //取出vector格式的num-ring键值
     auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
+    auto curr_veloid = cloud_voxel_eloid.back();                                        //取出体素椭球序列,最近的
 
     //ca 部分
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
@@ -303,7 +319,9 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     for ( int candidate_iter_idx = 0; candidate_iter_idx < MIX_NUM_CANDIDATES_FROM_TREE*2; candidate_iter_idx++ )
     {
         MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
-        std::pair<double, int> sc_dist_result = MIXdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
+        std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
+        // std::pair<double, int> sc_dist_result = MIXdistancevoxeleloid( curr_desc, polarcontext_candidate);    //返回相似度值和列向量偏移量
+        std::pair<double, int> sc_dist_result = MIXdistancevoxeleloid( curr_desc, polarcontext_candidate,curr_veloid,voxel_eloid_candidate);    //返回相似度值和列向量偏移量
         
         double candidate_dist = sc_dist_result.first;
         int candidate_align = sc_dist_result.second;
@@ -460,7 +478,8 @@ const Eigen::MatrixXd& MIXManager::MIXgetConstRefRecentSCD(void)
 }
 
  
-Eigen::MatrixXd MIXManager::MIXGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont)
+// 求解协方差 输入 点云集合  输出 均值-协方差对
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> MIXManager::MIXGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont)
 {
 	// reference: https://stackoverflow.com/questions/15138634/eigen-is-there-an-inbuilt-way-to-calculate-sample-covariance
 	const int rows = bin_piont.size();
@@ -495,11 +514,12 @@ Eigen::MatrixXd MIXManager::MIXGetCovarMatrix(std::vector<Eigen::Vector3d> bin_p
  
 	Eigen::MatrixXd covar = (tmp.adjoint() * tmp) / float(nsamples - 1);    //求协方差矩阵
 	// std::cout << "print covariance matrix: " << std::endl << covar << std::endl << std::endl;
+    std::pair<Eigen::MatrixXd, Eigen::MatrixXd> result = {mean,covar};
  
-	return covar;
+	return result;
 }
-
  
+//奇异值分解 输入 协方差  输出 奇异值
 Eigen::MatrixXd MIXManager::MIXGetSingularvalue(Eigen::MatrixXd bin_cov)
 {
 	const int rows = bin_cov.rows();
@@ -530,3 +550,361 @@ Eigen::MatrixXd MIXManager::MIXGetSingularvalue(Eigen::MatrixXd bin_cov)
  
 	return singular_values;
 }
+
+//特征值分解 返回值为降序 输入 协方差  输出 特征值-特征向量对
+std::pair<std::vector<double>,Eigen::MatrixXd> MIXManager::MIXGetEigenvalues(Eigen::MatrixXd bin_cov)
+{
+    // cout << "Here is a 3x3 matrix, bin_cov:" << endl << bin_cov << endl << endl;
+    EigenSolver<Matrix3d> es(bin_cov);
+	
+	Matrix3d D = es.pseudoEigenvalueMatrix();
+	Matrix3d V = es.pseudoEigenvectors();
+	// cout << "The pseudo-eigenvalue matrix D is:" << endl << D << endl;
+	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+
+    //特征值 特征向量 排序
+    for(int i = 0; i < D.cols(); i++)
+    {
+        for(int j = 0; j < D.cols()-1; j++)
+        {
+            if(D(j,j) < D(j+1,j+1))
+            {
+                double mid_value;
+                Eigen::Vector3d mid_col;
+                //D
+                mid_value = D(j,j);
+                D(j,j) = D(j+1,j+1);
+                D(j+1,j+1) = mid_value;
+                //V
+                mid_col = V.col(j);
+                V.col(j) = V.col(j+1);
+                V.col(j+1) = mid_col;
+            }
+        }
+    }
+	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+
+    //特征值赋值到vector
+    std::vector<double> eigen_value;
+    eigen_value.resize(D.cols());
+    for(int i = 0; i < D.cols(); i++) { eigen_value[i] = D(i,i); }
+    // std::cout << "eigen value: " << eigen_value[0] << " " << eigen_value[1] << " " << eigen_value[2] << endl;
+
+    //将特征值和特征向量用pair形式返回
+    std::pair<std::vector<double>,Eigen::MatrixXd> result = {eigen_value,V};
+
+    return result;
+}
+
+//体素椭球筛选 暂不对形状进行筛选
+//模型有效条件：点云数量大于50 || （点云数量大于10 && 轴长最大小于0.1m）
+bool MIXManager::MIXFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid)
+{
+    if(voxeleloid.point_num > 50 || (voxeleloid.point_num > 10 && voxeleloid.axis_length[0] < 0.1))
+    {
+        voxeleloid.valid = 1;
+    }else{
+        voxeleloid.valid = 0;
+    }
+
+    return voxeleloid.valid;
+}
+
+//体素重合度计算
+double MIXManager::MIXDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
+{
+    double num_overlap_eloid = 0;
+    double all_valid_eloid = 0;
+    int can_id, cur_id;
+    // cout << "shift num is:" << num_shift << endl;
+    for(int i = 0; i < MIX_PC_NUM_RING * MIX_PC_NUM_SECTOR; i++)
+    {
+        //偏移候选体素椭球id
+        can_id = (i % MIX_PC_NUM_SECTOR + num_shift) % MIX_PC_NUM_SECTOR + (i - i % MIX_PC_NUM_SECTOR);
+        cur_id = i;
+
+        if(v_eloid_cur[cur_id].valid == 1 || v_eloid_can[can_id].valid == 1)
+        {
+            double dist = 0;
+            double dist_mid = 0;
+            double cos_col_ve = 0;
+            double cos_col_ve_1 = 0;
+            double cos_col_ve_2 = 0;
+            if(v_eloid_cur[cur_id].valid == 1 && v_eloid_can[can_id].valid == 1)
+            {
+                for(int ii = 0; ii < v_eloid_cur[cur_id].axis_length.size(); ii++)
+                {
+                    // cout << "cur id: " << cur_id << " cur length: " << v_eloid_cur[cur_id].axis_length[ii] 
+                    //      << " can id: " << can_id << " can length: " << v_eloid_can[can_id].axis_length[ii] << endl;
+                    dist += (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]) * (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]);
+                }
+                dist = sqrt(dist);
+                // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  distance: " << dist << endl;
+
+                // dist_mid = sqrt((v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) * (v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) +
+                //     (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) * (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) +
+                //     (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z) * (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z));
+
+                for(int iii = 0; iii < v_eloid_cur[cur_id].axis.cols(); iii++){
+                        VectorXd cur_col_axis =  v_eloid_cur[cur_id].axis.col(iii);
+                        VectorXd can_col_axis =  v_eloid_can[can_id].axis.col(iii);
+
+                        if(cur_col_axis.norm() == 0 || can_col_axis.norm() == 0)
+                            continue; // don't count this sector pair.
+
+                        cos_col_ve_1 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
+                        can_col_axis *= (-1);
+                        cos_col_ve_2 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
+                        cos_col_ve += (cos_col_ve_1 < cos_col_ve_2 ? cos_col_ve_1 : cos_col_ve_2);
+                }
+
+                if(dist < MIX_VOXEL_ELIOD_DIST_THRES && cos_col_ve < MIX_VOXEL_ELIOD_COS_THRES)
+                    num_overlap_eloid++;
+            }
+
+            all_valid_eloid++;
+        }
+    }
+    // cout << "all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
+
+    return (double)(1- (num_overlap_eloid / all_valid_eloid));
+    
+}
+
+//体素椭球列合并
+class Voxel_Ellipsoid MIXManager::MIXMergeVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col)
+{  
+    class Voxel_Ellipsoid merge_eloid;
+    int Nm = 0;
+    Eigen::Matrix3d pm,Em;
+    pm << 0,0,0,
+          0,0,0,
+          0,0,0;
+    Em = pm;
+
+    for(int i = 0; i < MIX_PC_NUM_RING; i++)
+    {
+        class Voxel_Ellipsoid added_eloid;
+        Eigen::Matrix3d added_mean;
+        added_mean << 0,0,0,
+                      0,0,0,
+                      0,0,0;
+        added_eloid = v_eloid[i * MIX_PC_NUM_SECTOR + col];   
+
+        if(added_eloid.valid == 1)
+        {
+            //数量
+            Nm += added_eloid.point_num;
+            //均值 
+            added_mean(0,0) = added_eloid.center.x;
+            added_mean(1,0) = added_eloid.center.y;
+            added_mean(2,0) = added_eloid.center.z;
+            pm += added_eloid.point_num * added_mean;
+            //协方差
+            Em += added_eloid.point_num * (added_eloid.cov + added_mean * added_mean.transpose());
+
+            // cout << "Nm: " << Nm << endl
+            //      << "pm: " << endl
+            //      << pm << endl
+            //      << "Em: " << endl
+            //      << Em << endl;
+        }
+    }
+
+    //均值协方差计算
+    pm = pm / Nm;
+    Em = (Em / Nm) - (pm * pm.transpose());
+
+    //最后进行均值转换 椭球剩余值填充
+    std::pair<std::vector<double>,Eigen::MatrixXd> merge_eigen_;
+    merge_eloid.point_num = Nm; 
+    merge_eloid.center.x = pm(0,0);
+    merge_eloid.center.y = pm(1,0);
+    merge_eloid.center.z = pm(2,0);
+    merge_eloid.valid = 1;
+    merge_eloid.cov = Em;
+    merge_eigen_ = MIXGetEigenvalues(merge_eloid.cov);
+    merge_eloid.axis_length = merge_eigen_.first;
+    merge_eloid.axis = merge_eigen_.second;
+
+    // 打印测试
+    // cout << "TEST : ";
+    // cout << "eloid num: " << merge_eloid.point_num << endl
+        //  << "center: " << merge_eloid.center.x << ',' <<  merge_eloid.center.y << ',' << merge_eloid.center.z << endl
+        //  << "cov: " << endl
+        //  << merge_eloid.cov << endl
+        //  << "axis length: " << merge_eloid.axis_length[0] << ',' << merge_eloid.axis_length[1] << ',' << merge_eloid.axis_length[2] << endl
+        //  << "axis: " << endl 
+        //  << merge_eloid.axis <<endl
+        // ;
+
+    return merge_eloid;
+}
+
+//列体素椭球合并 相似度计算
+double MIXManager::MIXDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
+{
+    double num_overlap_eloid = 0;
+    double all_valid_eloid = 0;
+    int can_col, cur_col;
+    double avg_dist_length = 0;
+    double avg_dist_mid = 0;
+    double avg_cos_col = 0;
+    // cout << "shift num is:" << num_shift << endl;
+    for(int i = 0; i < MIX_PC_NUM_SECTOR; i++)
+    {
+        class Voxel_Ellipsoid cur_col_eloid,can_col_eloid;
+
+        //偏移候选体素椭球列
+        cur_col = i;
+        can_col = (i + num_shift) % MIX_PC_NUM_SECTOR;
+
+        // cout << "TEST cur cloud" << "  col: " << cur_col << endl;
+        cur_col_eloid = MIXMergeVoxeleloid(v_eloid_cur,cur_col);
+        // cout << "TEST can cloud" << "  col: " << can_col << endl;
+        can_col_eloid = MIXMergeVoxeleloid(v_eloid_can,can_col);
+
+        //计算体素椭球三轴和中心相似度
+        double dist_length = 0;
+        double dist_mid = 0;
+        double cos_col_ve = 0;
+        double cos_col_ve_1 = 0;
+        double cos_col_ve_2 = 0;
+        if(cur_col_eloid.valid == 1 && can_col_eloid.valid == 1)
+        {
+            for(int ii = 0; ii < cur_col_eloid.axis_length.size(); ii++)
+            {
+                // cout << "cur id: " << cur_col << " cur length: " << cur_col_eloid.axis_length[ii] 
+                //      << " can id: " << can_col << " can length: " << can_col_eloid.axis_length[ii] << endl;
+                dist_length += (cur_col_eloid.axis_length[ii] - can_col_eloid.axis_length[ii]) * (cur_col_eloid.axis_length[ii] - can_col_eloid.axis_length[ii]);
+            }
+            dist_length = sqrt(dist_length);
+
+            dist_mid = sqrt((cur_col_eloid.center.x - can_col_eloid.center.x) * (cur_col_eloid.center.x - can_col_eloid.center.x) +
+                (cur_col_eloid.center.y - can_col_eloid.center.y) * (cur_col_eloid.center.y - can_col_eloid.center.y) +
+                (cur_col_eloid.center.z - can_col_eloid.center.z) * (cur_col_eloid.center.z - can_col_eloid.center.z));
+            
+            for(int iii = 0; iii < cur_col_eloid.axis.cols(); iii++){
+                VectorXd cur_col_axis =  cur_col_eloid.axis.col(iii);
+                VectorXd can_col_axis =  can_col_eloid.axis.col(iii);
+
+                if(cur_col_axis.norm() == 0 || can_col_axis.norm() == 0)
+                    continue; // don't count this sector pair.
+
+                cos_col_ve_1 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
+                can_col_axis *= (-1);
+                cos_col_ve_2 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
+                cos_col_ve += (cos_col_ve_1 < cos_col_ve_2 ? cos_col_ve_1 : cos_col_ve_2);
+                
+            }
+            // cout << "voxel ellipsoid cur col: " << cur_col << "  can col: " << can_col << "  length distance: " << dist_length << endl;
+            // cout << " TEST mid distance: " << dist_mid << "  length distance: " << dist_length << " cos col: " << cos_col_ve << endl;
+
+            // if(dist_length < MIX_VOXEL_ELIOD_DIST_THRES && dist_mid < 1.5)
+                // num_overlap_eloid++;
+        }
+        avg_cos_col += cos_col_ve;
+        avg_dist_length += dist_length;
+        avg_dist_mid += dist_mid;
+
+        // all_valid_eloid++;
+    }
+    // cout << " TEST all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
+    avg_cos_col /= MIX_PC_NUM_SECTOR;
+    avg_dist_length /= MIX_PC_NUM_SECTOR;
+    avg_dist_mid /= MIX_PC_NUM_SECTOR;
+    // cout << " TEST avg mid distance: " << avg_dist_mid << " avg length distance: " << avg_dist_length << " avg cos col: " << avg_cos_col << endl;
+
+
+    return (double)(avg_cos_col);    
+
+}
+
+//体素椭球版本 描述符偏移量计算 重合度计算
+std::pair<double, int> MIXManager::MIXdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can)
+{
+    // 1. fast align using variant key (not in original IROS18)
+    MatrixXd vkey_sc1 = MIXmakeSectorkeyFromScancontext( _sc1 );   //计算列的均值并以行的形式返回整个矩阵的列向量均值
+    MatrixXd vkey_sc2 = MIXmakeSectorkeyFromScancontext( _sc2 );
+    int argmin_vkey_shift = MIXfastAlignUsingVkey( vkey_sc1, vkey_sc2 );   //将列均值向右移动并使用F-范数进行对比，返回偏移值
+    // cout << "TEST real col shift: " << argmin_vkey_shift << endl;
+
+    const int SEARCH_RADIUS = round( 0.5 * MIX_SEARCH_RATIO * _sc1.cols() ); // a half of search range  //搜索范围
+    std::vector<int> shift_idx_search_space { argmin_vkey_shift };
+    for ( int ii = 1; ii < SEARCH_RADIUS + 1; ii++ )
+    {
+        shift_idx_search_space.push_back( (argmin_vkey_shift + ii + _sc1.cols()) % _sc1.cols() );
+        shift_idx_search_space.push_back( (argmin_vkey_shift - ii + _sc1.cols()) % _sc1.cols() );
+    }
+    std::sort(shift_idx_search_space.begin(), shift_idx_search_space.end());    //在vector中填入以获取到的偏移量为中心，前后范围为搜索范围的待匹配偏移量
+
+    // 2. fast columnwise diff 
+    int argmin_shift = 0;
+    double min_sc_dist = 10000000;
+    for ( int num_shift: shift_idx_search_space )
+    {
+        // cout << "TEST current col shift: " << num_shift << endl << endl;
+        MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
+        double cur_sc_dist_cos = MIXdistDirectSC( _sc1, sc2_shifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
+        double cur_sc_dist_overlap = MIXDistVoxeleloid( v_eloid_cur, v_eloid_can, num_shift); //计算椭球重叠率
+        // double cur_sc_dist_single = MIXDistVoxeleloid(v_eloid_cur, v_eloid_can, num_shift);
+        double cur_sc_dist = cur_sc_dist_overlap * 0.5 + cur_sc_dist_cos * 0.5;
+        if( cur_sc_dist < min_sc_dist )
+        {
+            argmin_shift = num_shift;
+            min_sc_dist = cur_sc_dist;
+        }
+        // cout << "TEST min distance: " << min_sc_dist << endl;
+        // cout << "TEST min col shift: " << argmin_shift << endl;
+    }
+
+    return make_pair(min_sc_dist, argmin_shift);
+
+} // distanceBtnScanContext
+
+
+
+//体素椭球数据保存函数
+void MIXManager::MIXSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id)
+{
+    static int init = 0;
+    std::ostringstream out;
+    out << std::internal << std::setfill('0') << std::setw(6) << id;
+    string v_eloid_id = out.str();
+    string voxel_ellipsiod_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod/CloudData/";    //体素椭球数据储存地址
+    if(!init)
+    {
+        int unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("mkdir ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
+        unused = system((std::string("mkdir -p ") + voxel_ellipsiod_data_route).c_str());
+        init += 1;
+    }
+
+    string voxel_ellipsiod_data_file = voxel_ellipsiod_data_route + v_eloid_id + ".csv";
+
+    ofstream outFile;
+    outFile.open(voxel_ellipsiod_data_file, ios::out);
+    outFile << "ID" << ',' << "valid" << ',' << "num" << ',' << "a" << ',' << "b" << ',' << "c" << ',' 
+            << "a-mean" << ',' << "a-mean" << ',' << "a-mean" << ',' 
+            << "a-axis-x" << ',' << "a-axis-y" << ',' << "a-axis-z" << ',' 
+            << "b-axis-x" << ',' << "b-axis-y" << ',' << "b-axis-z" << ',' 
+            << "c-axis-x" << ',' << "c-axis-y" << ',' << "c-axis-z" << ',' 
+            << endl; 
+    int id_index = 0;
+    for(auto &data_it : v_eloid_data)
+    {
+        outFile << id_index << ',' << data_it.valid << ',' << data_it.point_num << ',' 
+                << data_it.axis_length[0] << ',' << data_it.axis_length[1] << ',' << data_it.axis_length[2] << ',' 
+                << data_it.center.x << ',' << data_it.center.y << ',' << data_it.center.z << ','
+                << data_it.axis(0,0) << ',' << data_it.axis(1,0) << ',' << data_it.axis(2,0) << ','
+                << data_it.axis(0,1) << ',' << data_it.axis(1,1) << ',' << data_it.axis(2,1) << ',' 
+                << data_it.axis(0,2) << ',' << data_it.axis(1,2) << ',' << data_it.axis(2,2) << ',' 
+                << endl; 
+        id_index++;
+    }   
+
+    outFile.close();
+} 

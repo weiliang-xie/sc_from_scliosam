@@ -69,8 +69,10 @@ class Voxel_Ellipsoid: public Ellipsoid{
 public:
     Voxel_Ellipsoid(){
         valid = 0;
+        mode = -1;
     }
     bool valid;         //是否为满足评判相似度的椭球模型
+    int mode;           //椭球类型 1：线性 2：平面型 3：立体型
 };
 
 class Refer_Ellipsoid: public Ellipsoid{
@@ -102,8 +104,9 @@ public:
     std::pair<double, int> NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can);
     bool NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid);
     double NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
-    class Voxel_Ellipsoid NDMergeVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col);
-    double NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
+    class Voxel_Ellipsoid NDMergeColVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col);
+    class Voxel_Ellipsoid NDMergeVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, std::vector<int> v_id);    
+    Eigen::Vector3d NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
     void NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id);
 
 
@@ -140,7 +143,9 @@ public:
     // config 
     const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter = 0;
-    double       ND_VOXEL_ELIOD_DIST_THRES = 8;
+    double       ND_VOXEL_ELIOD_DIST_THRES = 1;
+    double       ND_VOXEL_ELIOD_COS_THRES = 1;
+
 
     //data
     std::vector<double> polarcontexts_timestamp_; // optional.
