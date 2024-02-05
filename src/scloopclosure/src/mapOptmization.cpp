@@ -398,6 +398,7 @@ public:
         edges_str.emplace_back(curEdgeInfo);    //与push_back()基本一致
     }
 
+    //加载保存的描述矩阵数据函数 输入矩阵数据文件夹 返回矩阵数据
     template<typename T>
     T test_load_csv_descriptor(const std::string & path) 
     {
@@ -425,6 +426,7 @@ public:
             RowMajor>>(values.data(), rows, values.size() / rows);
     }
 
+    //加载保存的椭球数据函数 输入椭球数据文件夹 返回体素椭球模型vector 与SaveVoxelellipsoidData()对应
     std::vector<class Voxel_Ellipsoid>  test_load_csv_voxel_eloid(const std::string & path) 
     {
         std::ifstream in;
@@ -530,9 +532,13 @@ public:
         cout << "gt center vector: " << endl;
         cout << gt_center_vector << endl;
         cout << "cos error: " << cos_vector << endl;
-
-
     }
+
+
+
+
+
+    
 
     //获取pose真值
     void getposegroundtruth()
@@ -603,7 +609,7 @@ public:
         pose_final_change.push_back(last_offset_pose);
     }
 
-    //获取回环gt 通过位置距离判断，与非前后50帧内的距离小于10m则为回环
+    //计算回环gt 通过位置距离判断，与非前后50帧内的距离小于10m则为回环
     void getloopclosuregt(void)
     {
         
@@ -646,6 +652,9 @@ public:
         // cout <<endl;
         cout << "finish get loop closure gt" << endl;
     }
+
+
+
 
     /*回环PR计算
       输入： 预测点云帧id和最小距离
@@ -758,6 +767,10 @@ public:
         saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
         saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
     }
+
+
+
+
 
 
 

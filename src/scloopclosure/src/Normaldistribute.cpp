@@ -379,7 +379,9 @@ const Eigen::MatrixXd& NDManager::NDgetConstRefRecentSCD(void)
     return polarcontexts_.back();
 }
 
-// 求解协方差 输入 点云集合  输出 均值-协方差对
+
+
+//求解协方差 输入 点云集合  输出 均值-协方差对
 std::pair<Eigen::MatrixXd, Eigen::MatrixXd> NDManager::NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont)
 {
 	// reference: https://stackoverflow.com/questions/15138634/eigen-is-there-an-inbuilt-way-to-calculate-sample-covariance
@@ -499,8 +501,8 @@ std::pair<std::vector<double>,Eigen::MatrixXd> NDManager::NDGetEigenvalues(Eigen
     return result;
 }
 
-//体素椭球筛选 暂不对形状进行筛选
-//模型有效条件：点云数量大于50 || （点云数量大于10 && 轴长最大小于0.1m）
+//体素椭球筛选 形状筛选
+//模型有效条件：点云数量大于20 
 bool NDManager::NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid)
 {
     if(voxeleloid.point_num > 20)
