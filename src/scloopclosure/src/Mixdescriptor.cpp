@@ -873,20 +873,20 @@ void MIXManager::MIXSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_
     std::ostringstream out;
     out << std::internal << std::setfill('0') << std::setw(6) << id;
     string v_eloid_id = out.str();
-    string voxel_ellipsiod_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod/CloudData/";    //体素椭球数据储存地址
+    string voxel_ellipsoid_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid/CloudData/";    //体素椭球数据储存地址
     if(!init)
     {
-        int unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("mkdir ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("mkdir -p ") + voxel_ellipsiod_data_route).c_str());
+        int unused = system((std::string("exec rm -r ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("mkdir ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("exec rm -r ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("mkdir -p ") + voxel_ellipsoid_data_route).c_str());
         init += 1;
     }
 
-    string voxel_ellipsiod_data_file = voxel_ellipsiod_data_route + v_eloid_id + ".csv";
+    string voxel_ellipsoid_data_file = voxel_ellipsoid_data_route + v_eloid_id + ".csv";
 
     ofstream outFile;
-    outFile.open(voxel_ellipsiod_data_file, ios::out);
+    outFile.open(voxel_ellipsoid_data_file, ios::out);
     outFile << "ID" << ',' << "valid" << ',' << "num" << ',' << "a" << ',' << "b" << ',' << "c" << ',' 
             << "a-mean" << ',' << "a-mean" << ',' << "a-mean" << ',' 
             << "a-axis-x" << ',' << "a-axis-y" << ',' << "a-axis-z" << ',' 

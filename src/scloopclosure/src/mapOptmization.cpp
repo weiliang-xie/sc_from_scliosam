@@ -435,9 +435,9 @@ public:
         uint rows = 0;
         while (std::getline(in, line))
         {
-            if(line == "ID,valid,num,a,b,c,a-mean,a-mean,a-mean,mode,a-axis-x,a-axis-y,a-axis-z,b-axis-x,b-axis-y,b-axis-z,c-axis-x,c-axis-y,c-axis-z,")
+            if(line == "ID,valid,num,a,b,c,a-mean,b-mean,c-mean,a-max,b-max,c-max,mode,a-axis-x,a-axis-y,a-axis-z,b-axis-x,b-axis-y,b-axis-z,c-axis-x,c-axis-y,c-axis-z,")
             {   
-                // cout << "first line" << endl;
+                cout << "first line" << endl;
                 continue;
             }
 
@@ -478,9 +478,18 @@ public:
                         bin_eloid.center.z = (float)val;
                         break;
                     case 9:
-                        bin_eloid.mode = (int)val;
+                        bin_eloid.max_h_center.x = (float)val;
                         break;
                     case 10:
+                        bin_eloid.max_h_center.y = (float)val;
+                        break;
+                    case 11:
+                        bin_eloid.max_h_center.z = (float)val;
+                        break;
+                    case 12:
+                        bin_eloid.mode = (int)val;
+                        break;
+                    case 13:
                         break;
                 }
                 if (bin_eloid.valid == 0 && cnt == 1)
@@ -501,17 +510,27 @@ public:
         // MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/001567.scd");
         // MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000122.scd");
 
-        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/001567.csv");
-        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod copy/CloudData/000122.csv");
+        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid copy/CloudData/001567.csv");
+        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid copy/CloudData/000122.csv");
         
         cout << "cur_eloid num:" << cur_eloid.size() << endl;
+        cout << "can_eloid num:" << can_eloid.size() << endl;
 
-        Eigen::Vector3d a =  ndManager.NDDistMergeVoxelellipsoid(cur_eloid,can_eloid,1);
 
+        // Eigen::Vector3d a =  ndManager.NDDistMergeVoxelellipsoid(cur_eloid,can_eloid,1);
+        Eigen::Vector3d pre_center_vector = ndManager.MatchKeyVoxelEllipsoid(cur_eloid,can_eloid);
+        // double b = ndManager.NDDistVoxeleloid(cur_eloid,can_eloid,1);
+        cout << "avg center:" << endl;
+        cout << pre_center_vector << endl;
+        Eigen::Vector3d gt_center_vector = {pose_ground_truth[cur](0,3) - pose_ground_truth[can](0,3),
+                                            pose_ground_truth[cur](1,3) - pose_ground_truth[can](1,3),
+                                            pose_ground_truth[cur](2,3) - pose_ground_truth[can](2,3)};
+        
+        double cos_vector = (1 - ((pre_center_vector.dot(gt_center_vector)) / (pre_center_vector.norm() * gt_center_vector.norm())));
         cout << "gt center vector: " << endl;
-        cout << pose_ground_truth[cur](0,3) - pose_ground_truth[can](0,3) << endl
-             << pose_ground_truth[cur](1,3) - pose_ground_truth[can](1,3) << endl
-             << pose_ground_truth[cur](2,3) - pose_ground_truth[can](2,3) << endl;
+        cout << gt_center_vector << endl;
+        cout << "cos error: " << cos_vector << endl;
+
 
     }
 
@@ -871,7 +890,7 @@ public:
 
             // performSCLoopClosure();      //求解SC回环状态
 
-            NDperformSCLoopClosure();      //求解ND回环状态
+            // NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 

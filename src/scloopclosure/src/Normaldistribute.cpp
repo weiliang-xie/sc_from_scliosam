@@ -99,6 +99,17 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
                 bin_eloid.axis_length = bin_eigen_.first;
                 bin_eloid.axis = bin_eigen_.second;
 
+                //测试 最大高度
+                for(int i = 0; i < bin_it.size(); i++)
+                {
+                    if(bin_it[i][2] > bin_eloid.max_h_center.z)
+                    {
+                        bin_eloid.max_h_center.x = bin_it[i][0];
+                        bin_eloid.max_h_center.y = bin_it[i][1];
+                        bin_eloid.max_h_center.z = bin_it[i][2];
+                    }
+                }
+
                 if(!NDFilterVoxelellipsoid(bin_eloid)) 
                 {   
                     //体素椭球为无效模型 筛选小于一定数量的椭球
@@ -537,9 +548,9 @@ double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_c
                 dist = sqrt(dist);
                 // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  distance: " << dist << endl;
 
-                // dist_mid = sqrt((v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) * (v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) +
-                //     (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) * (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) +
-                //     (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z) * (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z));
+                dist_mid = sqrt((v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) * (v_eloid_cur[cur_id].center.x - v_eloid_can[can_id].center.x) +
+                    (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) * (v_eloid_cur[cur_id].center.y - v_eloid_can[can_id].center.y) +
+                    (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z) * (v_eloid_cur[cur_id].center.z - v_eloid_can[can_id].center.z));
 
                 for(int iii = 0; iii < v_eloid_cur[cur_id].axis.cols(); iii++){
                         VectorXd cur_col_axis =  v_eloid_cur[cur_id].axis.col(iii);
@@ -707,6 +718,165 @@ class Voxel_Ellipsoid NDManager::NDMergeVoxeleloid(std::vector<class Voxel_Ellip
     return merge_eloid;
 }
 
+/*想法测试
+    提取点云体素内投影面积远小于体素面积的椭球模型，作为关键椭球匹配，获取查询点云和候选点云的平移矩阵*/
+
+//获取最接近z轴的方向 返回除最接近z轴的方向对应的特征值以外的两个特征值（降序）
+std::pair<double,double> GetNearestZaxis(class Voxel_Ellipsoid v_eloid)
+{
+    double cos_ve = 0;
+    double cos_ve_1 = 0;
+    double cos_ve_2 = 0;
+    double cos_ve_max = -1;
+    int max_axis = 0;
+    for(int iii = 0; iii < v_eloid.axis.cols(); iii++){
+        VectorXd cur_axis =  v_eloid.axis.col(iii);
+        VectorXd can_axis =  v_eloid.axis.col(iii);
+        if(cur_axis.norm() == 0 || can_axis.norm() == 0)
+            continue; // don't count this sector pair.
+
+        cos_ve_1 = ((cur_axis.dot(can_axis)) / (cur_axis.norm() * can_axis.norm()));
+        can_axis *= (-1);
+        cos_ve_2 = ((cur_axis.dot(can_axis)) / (cur_axis.norm() * can_axis.norm()));
+        cos_ve = (cos_ve_1 > cos_ve_2 ? cos_ve_1 : cos_ve_2);
+        if(cos_ve > cos_ve_max)
+        {
+            cos_ve_max = cos_ve;
+            max_axis = iii; 
+        }
+    }
+    std::pair<double,double> result;
+    if(max_axis ==  0)
+    {
+        result.first = v_eloid.axis_length[1];
+        result.second = v_eloid.axis_length[2];
+    }else if(max_axis ==  1)
+    {
+        result.first = v_eloid.axis_length[0];
+        result.second = v_eloid.axis_length[2];        
+    }else{
+        result.first = v_eloid.axis_length[0];
+        result.second = v_eloid.axis_length[1];       
+    }
+
+    return result;
+}
+
+//关键椭球判断函数
+int IsKeyVoxelEllipsoid(int key_id, std::vector<class Voxel_Ellipsoid> &v_eloid)
+{
+    if(v_eloid[key_id].point_num > 100)
+    {
+        // if(v_eloid[key_id].max_h_center.z > v_eloid[key_id+1].max_h_center.z * 1.5
+        //     && v_eloid[key_id].max_h_center.z > v_eloid[(key_id-1+60)%60].max_h_center.z * 1.5
+        //     && v_eloid[key_id].max_h_center.z > v_eloid[key_id-60].max_h_center.z * 1.5
+        //     && v_eloid[key_id].max_h_center.z > v_eloid[key_id+60].max_h_center.z * 1.5)
+        if(v_eloid[key_id].max_h_center.z > v_eloid[key_id-60].max_h_center.z * 1.5
+            && v_eloid[key_id].max_h_center.z > v_eloid[key_id+60].max_h_center.z * 1.5)        
+        {
+            return 1;
+            // cout << "333" << endl;
+        }
+    }
+
+    return 0;
+}
+
+//提取关键椭球
+std::vector<class Voxel_Ellipsoid> NDManager::GetKeyVoxelEllipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid)
+{
+    std::vector<class Voxel_Ellipsoid> key_eloid;
+    double pi = 3.14;
+    for(int i = 60; i < (ND_PC_NUM_RING - 10) * ND_PC_NUM_SECTOR; i++)
+    {
+        //体素面积
+        double voxel_area = (pi * (ceil((double)i / ND_PC_NUM_SECTOR) * ND_PC_UNIT_RINGGAP * ceil((double)i / ND_PC_NUM_SECTOR) * ND_PC_UNIT_RINGGAP
+                             - floor((double)i / ND_PC_NUM_SECTOR) * ND_PC_UNIT_RINGGAP * floor((double)i / ND_PC_NUM_SECTOR) * ND_PC_UNIT_RINGGAP)) / ND_PC_NUM_SECTOR;
+
+        std::pair<double,double> far_z_eigen = GetNearestZaxis(v_eloid[i]);
+
+        double eloid_area = pi * far_z_eigen.first * far_z_eigen.second;
+
+        // cout << "voxel area: "  << voxel_area << "  eloid area: "  << eloid_area << endl;
+        // if(eloid_area < (voxel_area * 0.1) && v_eloid[i].point_num > 100)
+        if(IsKeyVoxelEllipsoid(i,v_eloid))
+        {
+            cout << "voxel id: " << i << endl;
+            cout << "eloid num: " << v_eloid[i].point_num << endl
+             << "max center: " << v_eloid[i].max_h_center.x << ',' <<  v_eloid[i].max_h_center.y << ',' << v_eloid[i].max_h_center.z << endl
+            //  << "cov: " << endl
+            //  << v_eloid[i].cov << endl
+            //  << "axis length: " << v_eloid[i].axis_length[0] << ',' << v_eloid[i].axis_length[1] << ',' << v_eloid[i].axis_length[2] << endl
+            //  << "axis: " << endl 
+            //  << v_eloid[i].axis <<endl
+            ;
+
+            // cout << "voxel area: "  << voxel_area << endl;
+            // cout << "eloid area: "  << eloid_area << endl;
+            
+            key_eloid.push_back(v_eloid[i]);
+        }
+
+    }
+    cout << "key eloid num: "  << key_eloid.size() << endl;
+    return key_eloid;
+}
+
+//匹配关键椭球
+Eigen::Vector3d NDManager::MatchKeyVoxelEllipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can)
+{
+    cout << "CUR KEY ELOID" << endl;
+    std::vector<class Voxel_Ellipsoid> cur_key_eloid = GetKeyVoxelEllipsoid(v_eloid_cur);
+    cout << "CAN KEY ELOID" << endl;
+    std::vector<class Voxel_Ellipsoid> can_key_eloid = GetKeyVoxelEllipsoid(v_eloid_can);
+    std::vector<int> min_can_key_id;
+
+    //匹配椭球模型
+    Eigen::Vector3d avg_center;
+    avg_center.setZero();
+    for(int i = 0; i < cur_key_eloid.size(); i++)
+    {
+        double min_dist_center = 10000;
+        int min_index = -1;
+        for(int j = 0; j < can_key_eloid.size(); j++)
+        {
+            
+            double dist_center = sqrt((cur_key_eloid[i].max_h_center.x - can_key_eloid[j].max_h_center.x) * (cur_key_eloid[i].max_h_center.x - can_key_eloid[j].max_h_center.x) +
+                                (cur_key_eloid[i].max_h_center.y - can_key_eloid[j].max_h_center.y) * (cur_key_eloid[i].max_h_center.y - can_key_eloid[j].max_h_center.y) +
+                                (cur_key_eloid[i].max_h_center.z - can_key_eloid[j].max_h_center.z) * (cur_key_eloid[i].max_h_center.z - can_key_eloid[j].max_h_center.z)); 
+            if(dist_center < min_dist_center)
+            {
+                min_dist_center = dist_center;
+                min_index = j;
+            }
+        }
+        if(min_dist_center > 10)
+            min_index = -1;
+
+        cout << "min index: " << min_index << endl;
+        min_can_key_id.push_back(min_index);
+    }
+
+    cout << "min can key id num: " << min_can_key_id.size() << endl;
+    
+    double avg_cnt = 0;
+    //计算平均平移矩阵
+    for(int i = 0; i < cur_key_eloid.size(); i++)
+    {
+        if(min_can_key_id[i] == -1)
+            continue;
+        
+        avg_center[0] += cur_key_eloid[i].max_h_center.x - can_key_eloid[min_can_key_id[i]].max_h_center.x; 
+        avg_center[1] += cur_key_eloid[i].max_h_center.y - can_key_eloid[min_can_key_id[i]].max_h_center.y; 
+        avg_center[2] += cur_key_eloid[i].max_h_center.z - can_key_eloid[min_can_key_id[i]].max_h_center.z; 
+        avg_cnt ++;
+
+    }
+    avg_center /= avg_cnt;
+
+    return avg_center;
+}
+
 //列体素椭球合并 相似度计算
 Eigen::Vector3d NDManager::NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
 {
@@ -864,22 +1034,23 @@ void NDManager::NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_el
     std::ostringstream out;
     out << std::internal << std::setfill('0') << std::setw(6) << id;
     string v_eloid_id = out.str();
-    string voxel_ellipsiod_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsiod/CloudData/";    //体素椭球数据储存地址
+    string voxel_ellipsoid_data_route = "/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid/CloudData/";    //体素椭球数据储存地址
     if(!init)
     {
-        int unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("mkdir ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("exec rm -r ") + voxel_ellipsiod_data_route).c_str());
-        unused = system((std::string("mkdir -p ") + voxel_ellipsiod_data_route).c_str());
+        int unused = system((std::string("exec rm -r ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("mkdir ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("exec rm -r ") + voxel_ellipsoid_data_route).c_str());
+        unused = system((std::string("mkdir -p ") + voxel_ellipsoid_data_route).c_str());
         init += 1;
     }
 
-    string voxel_ellipsiod_data_file = voxel_ellipsiod_data_route + v_eloid_id + ".csv";
+    string voxel_ellipsoid_data_file = voxel_ellipsoid_data_route + v_eloid_id + ".csv";
 
     ofstream outFile;
-    outFile.open(voxel_ellipsiod_data_file, ios::out);
+    outFile.open(voxel_ellipsoid_data_file, ios::out);
     outFile << "ID" << ',' << "valid" << ',' << "num" << ',' << "a" << ',' << "b" << ',' << "c" << ',' 
             << "a-mean" << ',' << "b-mean" << ',' << "c-mean" << ',' 
+            << "a-max" << ',' << "b-max" << ',' << "c-max" << ',' 
             << "mode" << ','
             << "a-axis-x" << ',' << "a-axis-y" << ',' << "a-axis-z" << ',' 
             << "b-axis-x" << ',' << "b-axis-y" << ',' << "b-axis-z" << ',' 
@@ -891,6 +1062,7 @@ void NDManager::NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_el
         outFile << id_index << ',' << data_it.valid << ',' << data_it.point_num << ',' 
                 << data_it.axis_length[0] << ',' << data_it.axis_length[1] << ',' << data_it.axis_length[2] << ',' 
                 << data_it.center.x << ',' << data_it.center.y << ',' << data_it.center.z << ','
+                << data_it.max_h_center.x << ',' << data_it.max_h_center.y << ',' << data_it.max_h_center.z << ','
                 << data_it.mode << ','
                 << data_it.axis(0,0) << ',' << data_it.axis(1,0) << ',' << data_it.axis(2,0) << ','
                 << data_it.axis(0,1) << ',' << data_it.axis(1,1) << ',' << data_it.axis(2,1) << ',' 
