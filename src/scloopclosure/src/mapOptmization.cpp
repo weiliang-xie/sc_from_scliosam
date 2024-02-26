@@ -187,7 +187,7 @@ public:
 
     bool aLoopIsClosed = false;
     // map<int, int> loopIndexContainer; // from new to old
-    multimap<int, int> loopIndexContainer; // from new to old // giseop 
+    multimap<int, int> SCloopIndexContainer; // from new to old // giseop 
 
     vector<pair<int, int>> loopIndexQueue;  //回环序号队列容器
     vector<gtsam::Pose3> loopPoseQueue;
@@ -254,8 +254,6 @@ public:
 
         // subCloud = nh.subscribe<lio_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
         subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
-        subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
-        subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("lio_loop/loop_closure_detection", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
 
         pubHistoryKeyFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_history_cloud", 1);
         pubIcpKeyFrames       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_corrected_cloud", 1);
@@ -774,50 +772,6 @@ public:
 
 
 
-    //xwl 位姿对比 比较真值与描述符估计值的旋转变量之间的误差
-    // void 
-
-    // // 旋转矩阵转换成欧拉角,未完成
-    // // Checks if a matrix is a valid rotation matrix.
-    // bool isRotationMatrix(Eigen::Matrix4d R)
-    // {
-    //     Eigen::Matrix4d Rt;
-    //     Rt = R.transpose();
-    //     Eigen::Matrix4d shouldBeIdentity = Rt * R;
-    //     Mat I = Mat::eye(3,3, shouldBeIdentity.type());
-
-    //     return  norm(I, shouldBeIdentity) < 1e-6;
-
-    // }
-
-    // // Calculates rotation matrix to euler angles
-    // // The result is the same as MATLAB except the order
-    // // of the euler angles ( x and z are swapped ).
-    // Vec3f rotationMatrixToEulerAngles(Eigen::Matrix4d R)
-    // {
-
-    //     assert(isRotationMatrix(R));
-
-    //     float sy = sqrt(R(0,0) * RAD2DEG(0,0) +  R(1,0) * R(1,0) );
-
-    //     bool singular = sy < 1e-6; // If
-
-    //     float x, y, z;
-    //     if (!singular)
-    //     {
-    //         x = atan2(R(2,1) , R(2,2));
-    //         y = atan2(-R(2,0), sy);
-    //         z = atan2(R(1,0), R(0,0));
-    //     }
-    //     else
-    //     {
-    //         x = atan2(-R(1,2), R(1,1));
-    //         y = atan2(-R(2,0), sy);
-    //         z = 0;
-    //     }
-    //     return Vec3f(x, y, z);   
-    // }
-
     //更新路径
     void updataposepath(Eigen::Matrix4d pose)
     {
@@ -843,22 +797,6 @@ public:
     }
 
 
-    // void writeEdgeStr(const std::pair<int, int> _node_idx_pair, const gtsam::Pose3& _relPose, const gtsam::SharedNoiseModel _noise)
-    // {
-    //     gtsam::Point3 t = _relPose.translation();
-    //     gtsam::Rot3 R = _relPose.rotation();
-
-    //     std::string curEdgeSaveStream;
-    //     curEdgeSaveStream << "EDGE_SE3:QUAT " << _node_idx_pair.first << " " << _node_idx_pair.second << " "
-    //         << t.x() << " "  << t.y() << " " << t.z()  << " " 
-    //         << R.toQuaternion().x() << " " << R.toQuaternion().y() << " " << R.toQuaternion().z()  << " " << R.toQuaternion().w() << std::endl;
-
-    //     edges_str.emplace_back(curEdgeSaveStream);
-    // }
-
-
-
-
     // void laserCloudInfoHandler(const lio_sam::cloud_infoConstPtr& msgIn)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     void laserCloudInfoHandler(const sensor_msgs::PointCloud2ConstPtr& msg)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     {
@@ -870,8 +808,6 @@ public:
         // extract info and feature cloud
         cloudinfo_new = *msg;
         //TODO 需要提取消息中的点云数据
-        // pcl::fromROSMsg(msgIn->cloud_corner,  *laserCloudCornerLast);   //TODO 提取点云中的角点 中间有数据的转化吗？ 这里这三个部分是将整帧点云分成这三部分吗?
-        // pcl::fromROSMsg(msgIn->cloud_surface, *laserCloudSurfLast);
         pcl::fromROSMsg(*msg, *laserCloudRaw); // giseop    //*将接收到的点云转换成laserCloudRaw
         laserCloudRawTime = cloudinfo_new.header.stamp.toSec(); // giseop save node time
         laser_cloud_frame_number++;
@@ -903,7 +839,7 @@ public:
 
             // performSCLoopClosure();      //求解SC回环状态
 
-            // NDperformSCLoopClosure();      //求解ND回环状态
+            NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 
@@ -921,18 +857,6 @@ public:
             makeandsaveprcurve();
     }
 
-    void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
-    {
-        gpsQueue.push_back(*gpsMsg);
-    }
-
-    void pointAssociateToMap(PointType const * const pi, PointType * const po)
-    {
-        po->x = transPointAssociateToMap(0,0) * pi->x + transPointAssociateToMap(0,1) * pi->y + transPointAssociateToMap(0,2) * pi->z + transPointAssociateToMap(0,3);
-        po->y = transPointAssociateToMap(1,0) * pi->x + transPointAssociateToMap(1,1) * pi->y + transPointAssociateToMap(1,2) * pi->z + transPointAssociateToMap(1,3);
-        po->z = transPointAssociateToMap(2,0) * pi->x + transPointAssociateToMap(2,1) * pi->y + transPointAssociateToMap(2,2) * pi->z + transPointAssociateToMap(2,3);
-        po->intensity = pi->intensity;
-    }
 
     //使用转换矩阵转换点云
     pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
@@ -958,45 +882,17 @@ public:
         return cloudOut;
     }
 
-    gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint)
-    {
-        return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
-                                  gtsam::Point3(double(thisPoint.x),    double(thisPoint.y),     double(thisPoint.z)));
-    }
-
-    gtsam::Pose3 trans2gtsamPose(float transformIn[])
-    {
-        return gtsam::Pose3(gtsam::Rot3::RzRyRx(transformIn[0], transformIn[1], transformIn[2]), 
-                                  gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
-    }
 
     Eigen::Affine3f pclPointToAffine3f(PointTypePose thisPoint)
     { 
         return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
     }
 
-    Eigen::Affine3f trans2Affine3f(float transformIn[])
-    {
-        return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-    }
-
-    PointTypePose trans2PointTypePose(float transformIn[])
-    {
-        PointTypePose thisPose6D;
-        thisPose6D.x = transformIn[3];
-        thisPose6D.y = transformIn[4];
-        thisPose6D.z = transformIn[5];
-        thisPose6D.roll  = transformIn[0];
-        thisPose6D.pitch = transformIn[1];
-        thisPose6D.yaw   = transformIn[2];
-        return thisPose6D;
-    }
-
 
     void loopClosureThread()    //回环检测函数进程
     {
-        if (loopClosureEnableFlag == false)     //判断是否开启回环检测使能
-            return;
+        // if (loopClosureEnableFlag == false)     //判断是否开启回环检测使能
+        //     return;
 
         ros::Rate rate(loopClosureFrequency);   //设定回环线程执行频率
         while (ros::ok())
@@ -1008,17 +904,56 @@ public:
         }
     }
 
-    void loopInfoHandler(const std_msgs::Float64MultiArray::ConstPtr& loopMsg)
+    void visualizeLoopClosure()     //回环闭合可视化函数
     {
-        std::lock_guard<std::mutex> lock(mtxLoopInfo);
-        if (loopMsg->data.size() != 2)
-            return;
+        visualization_msgs::MarkerArray markerArray;    //maker队列
+        // loop nodes   //点可视化配置
+        visualization_msgs::Marker markerNode;
+        markerNode.header.frame_id = odometryFrame;
+        markerNode.header.stamp = timeLaserInfoStamp;
+        markerNode.action = visualization_msgs::Marker::ADD;
+        markerNode.type = visualization_msgs::Marker::SPHERE_LIST;
+        markerNode.ns = "loop_nodes";
+        markerNode.id = 0;
+        markerNode.pose.orientation.w = 1;
+        markerNode.scale.x = 0.3; markerNode.scale.y = 0.3; markerNode.scale.z = 0.3; 
+        markerNode.color.r = 0; markerNode.color.g = 0.8; markerNode.color.b = 1;
+        markerNode.color.a = 1;
+        // loop edges 线可视化配置
+        visualization_msgs::Marker markerEdge;
+        markerEdge.header.frame_id = odometryFrame;
+        markerEdge.header.stamp = timeLaserInfoStamp;
+        markerEdge.action = visualization_msgs::Marker::ADD;
+        markerEdge.type = visualization_msgs::Marker::LINE_LIST;
+        markerEdge.ns = "loop_edges";
+        markerEdge.id = 1;
+        markerEdge.pose.orientation.w = 1;
+        markerEdge.scale.x = 0.1; markerEdge.scale.y = 0.1; markerEdge.scale.z = 0.1;
+        markerEdge.color.r = 0.9; markerEdge.color.g = 0.9; markerEdge.color.b = 0;
+        markerEdge.color.a = 1;
 
-        loopInfoVec.push_back(*loopMsg);
+        for (auto it = SCloopIndexContainer.begin(); it != SCloopIndexContainer.end(); ++it)
+        {
+            int key_cur = it->first;
+            int key_pre = it->second;
+            geometry_msgs::Point p;
+            p.x = pose_ground_truth[key_cur](0,3);
+            p.y = pose_ground_truth[key_cur](2,3);
+            p.z = 0;
+            markerNode.points.push_back(p);
+            markerEdge.points.push_back(p);
+            p.x = pose_ground_truth[key_pre](0,3);
+            p.y = pose_ground_truth[key_pre](2,3);
+            p.z = 0;
+            markerNode.points.push_back(p);
+            markerEdge.points.push_back(p);
+        }
 
-        while (loopInfoVec.size() > 5)
-            loopInfoVec.pop_front();
+        markerArray.markers.push_back(markerNode);
+        markerArray.markers.push_back(markerEdge);
+        pubLoopConstraintEdge.publish(markerArray);
     }
+
 
 
     void performSCLoopClosure()     //执行回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
@@ -1030,7 +965,7 @@ public:
         // cout << "   xwl enter perform sc loop closure" << endl;
 
         auto detectResult = scManager.detectLoopClosureID(); // first: nn index, second: yaw diff 
-        int loopKeyCur = copy_cloudKeyPoses3D->size() - 1;   //获取当前获取的实时帧id  变量失效
+        int loopKeyCur = laser_cloud_frame_number;   //获取当前获取的实时帧id  变量失效
         int loopKeyPre = detectResult.first;                //获取存在回环的历史帧的id 若不存在则返回-1
         float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
         if( loopKeyPre == -1 /* No loop found */)
@@ -1134,7 +1069,7 @@ public:
 
         // add loop constriant
         // loopIndexContainer[loopKeyCur] = loopKeyPre;
-        loopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
+        SCloopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
     } // performSCLoopClosure
 
     void NDperformSCLoopClosure()     //执行ND回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
@@ -1319,55 +1254,6 @@ public:
         *nearKeyframes = *cloud_temp;
     }
 
-    void visualizeLoopClosure()     //回环闭合可视化函数
-    {
-        visualization_msgs::MarkerArray markerArray;    //maker队列
-        // loop nodes   //点可视化配置
-        visualization_msgs::Marker markerNode;
-        markerNode.header.frame_id = odometryFrame;
-        markerNode.header.stamp = timeLaserInfoStamp;
-        markerNode.action = visualization_msgs::Marker::ADD;
-        markerNode.type = visualization_msgs::Marker::SPHERE_LIST;
-        markerNode.ns = "loop_nodes";
-        markerNode.id = 0;
-        markerNode.pose.orientation.w = 1;
-        markerNode.scale.x = 0.3; markerNode.scale.y = 0.3; markerNode.scale.z = 0.3; 
-        markerNode.color.r = 0; markerNode.color.g = 0.8; markerNode.color.b = 1;
-        markerNode.color.a = 1;
-        // loop edges 线可视化配置
-        visualization_msgs::Marker markerEdge;
-        markerEdge.header.frame_id = odometryFrame;
-        markerEdge.header.stamp = timeLaserInfoStamp;
-        markerEdge.action = visualization_msgs::Marker::ADD;
-        markerEdge.type = visualization_msgs::Marker::LINE_LIST;
-        markerEdge.ns = "loop_edges";
-        markerEdge.id = 1;
-        markerEdge.pose.orientation.w = 1;
-        markerEdge.scale.x = 0.1; markerEdge.scale.y = 0.1; markerEdge.scale.z = 0.1;
-        markerEdge.color.r = 0.9; markerEdge.color.g = 0.9; markerEdge.color.b = 0;
-        markerEdge.color.a = 1;
-
-        for (auto it = loopIndexContainer.begin(); it != loopIndexContainer.end(); ++it)
-        {
-            int key_cur = it->first;
-            int key_pre = it->second;
-            geometry_msgs::Point p;
-            p.x = copy_cloudKeyPoses6D->points[key_cur].x;
-            p.y = copy_cloudKeyPoses6D->points[key_cur].y;
-            p.z = copy_cloudKeyPoses6D->points[key_cur].z;
-            markerNode.points.push_back(p);
-            markerEdge.points.push_back(p);
-            p.x = copy_cloudKeyPoses6D->points[key_pre].x;
-            p.y = copy_cloudKeyPoses6D->points[key_pre].y;
-            p.z = copy_cloudKeyPoses6D->points[key_pre].z;
-            markerNode.points.push_back(p);
-            markerEdge.points.push_back(p);
-        }
-
-        markerArray.markers.push_back(markerNode);
-        markerArray.markers.push_back(markerEdge);
-        pubLoopConstraintEdge.publish(markerArray);
-    }
 
     void downsampleCurrentScan()    //当前扫描降采样处理
     {
@@ -1587,7 +1473,7 @@ int main(int argc, char** argv)
     // cov = MO.ndManager.NDGetCovarMatrix(piont);
     // MO.ndManager.NDGetSingularvalue(cov);
 
-    MO.testcode();
+    // MO.testcode();
 
     ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     
