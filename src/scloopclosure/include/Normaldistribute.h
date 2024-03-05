@@ -105,9 +105,13 @@ public:
     std::pair<Eigen::MatrixXd, Eigen::MatrixXd> NDGetCovarMatrix(std::vector<Eigen::Vector3d> bin_piont);
     Eigen::MatrixXd NDGetSingularvalue(Eigen::MatrixXd bin_cov);
     std::pair<std::vector<double>,Eigen::MatrixXd> NDGetEigenvalues(Eigen::MatrixXd bin_cov);
+    Eigen::Vector3d NDGetTranslationMatrix(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
+    int NDGetringshift(Eigen::Vector3d translation);
+    Eigen::Matrix4d GetTransformMatrix(int col_num_shift,Eigen::Vector3d translation);
     std::pair<double, int> NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can);
     bool NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid);
-    double NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
+    double NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift_col, int num_shift_row);
+    double NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift_col, Eigen::Vector3d translat);
     class Voxel_Ellipsoid NDMergeColVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col);
     class Voxel_Ellipsoid NDMergeVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, std::vector<int> v_id);    
     Eigen::Vector3d NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
@@ -146,14 +150,14 @@ public:
     // loop thres
     const double ND_SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
     // const double ND_SC_DIST_THRES = 0.13; // empirically 0.1-0.2 is fine (rare false-alarms) for 20x60 polar context (but for 0.15 <, DCS or ICP fit score check (e.g., in LeGO-LOAM) should be required for robustness)
-    const double ND_SC_DIST_THRES = 0.3; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
+    const double ND_SC_DIST_THRES = 0.9; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
 
     // config 
     const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter = 0;
-    double       ND_VOXEL_ELIOD_DIST_THRES = 0.2;
-    double       ND_VOXEL_ELIOD_COS_THRES = 1;
+    double       ND_VOXEL_ELIOD_DIST_THRES = 2;
+    double       ND_VOXEL_ELIOD_COS_THRES = 0.6;
 
 
     //data

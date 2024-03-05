@@ -519,8 +519,8 @@ bool NDManager::NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid)
     return voxeleloid.valid;
 }
 
-//体素重合度计算
-double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
+//体素重合度计算 体素偏移一一对应版本 求出列偏移和环偏移后将体素偏移后一一对应
+double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift_col, int num_shift_row)
 {
     double num_overlap_eloid = 0;
     double all_valid_eloid = 0;
@@ -529,7 +529,7 @@ double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_c
     for(int i = 0; i < ND_PC_NUM_RING * ND_PC_NUM_SECTOR; i++)
     {
         //偏移候选体素椭球id
-        can_id = (i % ND_PC_NUM_SECTOR + num_shift) % ND_PC_NUM_SECTOR + (i - i % ND_PC_NUM_SECTOR);
+        can_id = (i % ND_PC_NUM_SECTOR + num_shift_col) % ND_PC_NUM_SECTOR + (i - i % ND_PC_NUM_SECTOR);
         cur_id = i;
 
         if(v_eloid_cur[cur_id].valid == 1 || v_eloid_can[can_id].valid == 1)
@@ -564,10 +564,11 @@ double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_c
                         cos_col_ve_1 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
                         can_col_axis *= (-1);
                         cos_col_ve_2 = (1 - ((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
-                        cos_col_ve += (cos_col_ve_1 < cos_col_ve_2 ? cos_col_ve_1 : cos_col_ve_2);
+                        cos_col_ve += (cos_col_ve_1 > cos_col_ve_2 ? cos_col_ve_1 : cos_col_ve_2);
                 }
 
-                if(dist < ND_VOXEL_ELIOD_DIST_THRES && cos_col_ve < ND_VOXEL_ELIOD_COS_THRES)
+                cos_col_ve /= 3;
+                if(dist < ND_VOXEL_ELIOD_DIST_THRES && cos_col_ve > ND_VOXEL_ELIOD_COS_THRES)
                     num_overlap_eloid++;
             }
 
@@ -579,6 +580,121 @@ double NDManager::NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_c
     return (double)(1- (num_overlap_eloid / all_valid_eloid));
     
 }
+
+//体素重合度计算 椭球偏移落点版本 求出初始位姿后将椭球转移后判断落点于哪个体素再进行匹配
+double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift_col, Eigen::Vector3d translat)
+{
+    double num_overlap_eloid = 0;
+    double all_valid_eloid = 0;
+    int can_id, cur_id;
+    cout << "col shift num is:" << num_shift_col << endl;
+
+    //计算转移矩阵
+    Eigen::Matrix4d transform;
+    transform = GetTransformMatrix(num_shift_col,translat);
+
+    cout << "transform: " << endl << transform << endl;
+
+    for(int i = 0; i < ND_PC_NUM_RING * ND_PC_NUM_SECTOR; i++)
+    {
+        can_id = i;
+        // cout << "can id: " << can_id << endl;
+        if(v_eloid_can[can_id].valid == 1)
+        {
+            cout << endl;
+
+            Eigen::Vector4d can_eloid_center;
+            Eigen::Vector4d can_eloid_center_shift;
+            //检索对应的查询点云体素id
+            can_eloid_center[0] = v_eloid_can[can_id].center.x;
+            can_eloid_center[1] = v_eloid_can[can_id].center.y;
+            can_eloid_center[2] = v_eloid_can[can_id].center.z;
+            can_eloid_center[3] = 1;
+
+            can_eloid_center_shift = transform * can_eloid_center;
+            cout << "can id is: " << can_id << endl;
+            cout << "after shift can center is: " << can_eloid_center_shift << endl;
+ 
+            // xyz to ring, sector
+            double azim_range = sqrt(can_eloid_center_shift[0] * can_eloid_center_shift[0] + can_eloid_center_shift[1] * can_eloid_center_shift[1]);   //求点到传感器中心的距离
+            double azim_angle = xy2theta(can_eloid_center_shift[0], can_eloid_center_shift[0]);              //输出theta角        
+
+            if( azim_range > ND_PC_MAX_RADIUS )     //判断点距离传感器距离是否超出最大值
+            {            
+                cur_id = -1;
+                continue;
+            }            
+
+            // cout << "[ND] computer bin index" << endl;
+            int ring_idx = std::max( std::min( ND_PC_NUM_RING, int(ceil( (azim_range / ND_PC_MAX_RADIUS) * ND_PC_NUM_RING )) ), 1 );    //从1开始
+            int sector_idx = std::max( std::min( ND_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * ND_PC_NUM_SECTOR )) ), 1 );
+
+            cur_id = ring_idx * ND_PC_NUM_SECTOR + sector_idx;
+            cout << "cur id is: " << cur_id << endl;
+
+            double dist = 0;
+            double dist_mid = 0;
+            double cos_col_ve = 0;
+
+            // if(cur_id != -1 && v_eloid_cur[cur_id].valid == 1 && v_eloid_cur[cur_id].mode == v_eloid_can[can_id].mode)  //体素内不存在有效模型，直接丢弃
+            if(cur_id != -1 && v_eloid_cur[cur_id].valid == 1)  //体素内不存在有效模型，直接丢弃
+            {
+                //重新调整候选椭球模型
+                Voxel_Ellipsoid can_eloid_shift;
+                can_eloid_shift.center.x = can_eloid_center_shift[0];
+                can_eloid_shift.center.y = can_eloid_center_shift[1];
+                can_eloid_shift.center.z = can_eloid_center_shift[2];
+
+                Eigen::MatrixXd _can_eloid_axis;
+                _can_eloid_axis.resize(4,3);
+                _can_eloid_axis.block<3,3>(0,0) = v_eloid_can[can_id].axis;
+                _can_eloid_axis.row(3) = Eigen::Vector3d::Ones();
+                _can_eloid_axis = transform * _can_eloid_axis;
+                can_eloid_shift.axis = _can_eloid_axis.block<3,3>(0,0);
+
+                for(int ii = 0; ii < v_eloid_cur[cur_id].axis_length.size(); ii++)
+                {
+                    // cout << "cur id: " << cur_id << " cur length: " << v_eloid_cur[cur_id].axis_length[ii] 
+                    //      << " can id: " << can_id << " can length: " << v_eloid_can[can_id].axis_length[ii] << endl;
+                    dist += (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]) * (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]);
+                }
+                dist = sqrt(dist);
+                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " length distance: " << dist << endl;
+
+                dist_mid = sqrt((v_eloid_cur[cur_id].center.x - can_eloid_shift.center.x) * (v_eloid_cur[cur_id].center.x - can_eloid_shift.center.x) +
+                    (v_eloid_cur[cur_id].center.y - can_eloid_shift.center.y) * (v_eloid_cur[cur_id].center.y - can_eloid_shift.center.y) +
+                    (v_eloid_cur[cur_id].center.z - can_eloid_shift.center.z) * (v_eloid_cur[cur_id].center.z - can_eloid_shift.center.z));
+
+                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " center distance: " << dist_mid << endl;
+                
+
+                for(int iii = 0; iii < v_eloid_cur[cur_id].axis.cols(); iii++){
+                        VectorXd cur_col_axis =  v_eloid_cur[cur_id].axis.col(iii);
+                        VectorXd can_col_axis =  can_eloid_shift.axis.col(iii);
+
+                        if(cur_col_axis.norm() == 0 || can_col_axis.norm() == 0)
+                            continue; // don't count this sector pair.
+
+                        cos_col_ve += abs(((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
+                }
+
+                cos_col_ve /= 3;
+                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  cosine: " << cos_col_ve << endl;
+                // if(dist < ND_VOXEL_ELIOD_DIST_THRES && cos_col_ve > ND_VOXEL_ELIOD_COS_THRES)            //长度差 + cosine
+                // if(dist < ND_VOXEL_ELIOD_DIST_THRES && dist_mid > ND_VOXEL_ELIOD_DIST_THRES)             //中心距离 + 长度差
+                if(dist < ND_VOXEL_ELIOD_DIST_THRES)                                                        //长度差
+                    num_overlap_eloid++;
+            }
+
+            all_valid_eloid++;
+        }
+    }
+    cout << "all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
+
+    return (double)(1- (num_overlap_eloid / all_valid_eloid));
+    
+}
+
 
 //体素椭球列合并
 class Voxel_Ellipsoid NDManager::NDMergeColVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid, int col)
@@ -638,14 +754,14 @@ class Voxel_Ellipsoid NDManager::NDMergeColVoxeleloid(std::vector<class Voxel_El
 
     // 打印测试
     // cout << "TEST : ";
-    cout << "eloid num: " << merge_eloid.point_num << endl
-         << "center: " << merge_eloid.center.x << ',' <<  merge_eloid.center.y << ',' << merge_eloid.center.z << endl
+    // cout << "eloid num: " << merge_eloid.point_num << endl
+        //  << "center: " << merge_eloid.center.x << ',' <<  merge_eloid.center.y << ',' << merge_eloid.center.z << endl
         //  << "cov: " << endl
         //  << merge_eloid.cov << endl
-         << "axis length: " << merge_eloid.axis_length[0] << ',' << merge_eloid.axis_length[1] << ',' << merge_eloid.axis_length[2] << endl
+        //  << "axis length: " << merge_eloid.axis_length[0] << ',' << merge_eloid.axis_length[1] << ',' << merge_eloid.axis_length[2] << endl
         //  << "axis: " << endl 
-        //  << merge_eloid.axis <<endl
-        ;
+        //  << merge_eloid.axis << endl
+        //  << endl;
 
     return merge_eloid;
 }
@@ -879,7 +995,7 @@ Eigen::Vector3d NDManager::MatchKeyVoxelEllipsoid(std::vector<class Voxel_Ellips
     return avg_center;
 }
 
-//列体素椭球合并 相似度计算
+//列体素椭球筛选合并 相似度计算
 Eigen::Vector3d NDManager::NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
 {
     double num_overlap_eloid = 0;
@@ -908,7 +1024,7 @@ Eigen::Vector3d NDManager::NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ell
         double cos_col_ve = 0;
         double cos_col_ve_1 = 0;
         double cos_col_ve_2 = 0;
-        if(cur_col_eloid.valid == 1 && can_col_eloid.valid == 1)
+        if(cur_col_eloid.valid == 1 && can_col_eloid.valid == 1)    //判断是否为可靠椭球
         {
             for(int ii = 0; ii < cur_col_eloid.axis_length.size(); ii++)
             {
@@ -985,6 +1101,145 @@ Eigen::Vector3d NDManager::NDDistMergeVoxelellipsoid(std::vector<class Voxel_Ell
 
 }
 
+//初始平移矩阵获取
+Eigen::Vector3d NDManager::NDGetTranslationMatrix(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift)
+{
+    std::vector<Eigen::Vector3d> cur_z_arry;
+    std::vector<Eigen::Vector3d> can_z_arry;
+    int col_vaild_cnt = 0;
+    //最大均值高度队列获取
+    // cout << "endter get translation funsion" << endl;
+    for(int col = 0; col < ND_PC_NUM_SECTOR; col++)
+    {
+        double cur_max_avg_z = -100;
+        double can_max_avg_z = -100;
+        int cur_max_row = -1;
+        int can_max_row = -1;
+        int cur_vaild_num = 0;
+        int can_vaild_num = 0;
+
+        Eigen::Vector3d cur_max_center = {0,0,0};
+        Eigen::Vector3d can_max_center = {0,0,0};
+
+        int cur_id = col;
+        int can_id = (col + num_shift) % ND_PC_NUM_SECTOR;
+        // cout << "get can id " << can_id << endl;
+        for(int row = 0; row < ND_PC_NUM_RING; row ++)
+        {
+            //体素可靠计数
+            if(v_eloid_cur[cur_id + row * ND_PC_NUM_SECTOR].valid == 1)
+                cur_vaild_num++;
+            if(v_eloid_can[can_id + row * ND_PC_NUM_SECTOR].valid == 1)
+                can_vaild_num++;
+            //最大均值高度判断
+            if(v_eloid_cur[cur_id + row * ND_PC_NUM_SECTOR].center.z > cur_max_avg_z)
+            {   
+                cur_max_avg_z =  v_eloid_cur[cur_id + row * ND_PC_NUM_SECTOR].center.z;
+                cur_max_row = row;
+            }
+                
+            if(v_eloid_can[can_id + row * ND_PC_NUM_SECTOR].center.z > can_max_avg_z)
+            {
+                can_max_avg_z =  v_eloid_can[can_id + row * ND_PC_NUM_SECTOR].center.z;
+                can_max_row = row;
+            }
+        }
+
+        if((abs(cur_vaild_num - can_vaild_num) > 5) || (abs(can_max_avg_z - cur_max_avg_z) > 0.5))
+        {
+            cur_max_center[0] = 0;
+            cur_max_center[1] = 0;
+            cur_max_center[2] = 0;
+
+            can_max_center[0] = 0;
+            can_max_center[1] = 0;
+            can_max_center[2] = 0;
+            // cout << "col: " << col << " is unvaild" << endl;
+        }else{
+            cur_max_center[0] = v_eloid_cur[cur_id + cur_max_row * ND_PC_NUM_SECTOR].center.x;
+            cur_max_center[1] = v_eloid_cur[cur_id + cur_max_row * ND_PC_NUM_SECTOR].center.y;
+            cur_max_center[2] = v_eloid_cur[cur_id + cur_max_row * ND_PC_NUM_SECTOR].center.z;
+
+            can_max_center[0] = v_eloid_can[can_id + can_max_row * ND_PC_NUM_SECTOR].center.x;
+            can_max_center[1] = v_eloid_can[can_id + can_max_row * ND_PC_NUM_SECTOR].center.y;
+            can_max_center[2] = v_eloid_can[can_id + can_max_row * ND_PC_NUM_SECTOR].center.z;
+
+            col_vaild_cnt++;
+        }
+
+        cur_z_arry.push_back(cur_max_center);
+        can_z_arry.push_back(can_max_center);
+    }
+
+    Eigen::Vector3d cur_avg_translation = {0,0,0};
+    Eigen::Vector3d can_avg_translation = {0,0,0};
+    Eigen::Vector3d avg_translation = {0,0,0};
+    // cout << "finish getting feature voxel" << endl;
+    for(int col = 0; col < ND_PC_NUM_SECTOR; col++)
+    {
+        Eigen::Vector3d col_translation = {0,0,0};
+
+        cur_avg_translation += cur_z_arry[col];
+        can_avg_translation += can_z_arry[col];
+    }
+    cout << "col vaild cnt: " << col_vaild_cnt << endl;
+
+    cur_avg_translation /= (double)col_vaild_cnt;
+    can_avg_translation /= (double)col_vaild_cnt;
+    avg_translation = can_avg_translation - cur_avg_translation;
+
+    // std::cout << "avg_translation: " << endl << avg_translation << endl;
+
+    return avg_translation;
+}
+
+//平移矩阵转换成环偏移 输入偏移 输出 环键偏移 -1为偏移无效
+int NDManager::NDGetringshift(Eigen::Vector3d translation)
+{
+    int shift_row = -1;
+    double dist = sqrt((translation[0]) * (translation[0]) + 
+                        (translation[1]) * (translation[1]) +
+                        (translation[2]) * (translation[2]));
+    if(dist > 40)
+    {
+        return shift_row;
+    }
+    else
+    {
+        int integer = (int)(dist / ND_PC_UNIT_RINGGAP);
+        double remainder = dist - integer;
+
+        if(remainder > (ND_PC_UNIT_RINGGAP / 2))
+            integer++;
+        shift_row = integer;
+    }
+
+    return shift_row;
+}
+
+//转移矩阵组装
+Eigen::Matrix4d NDManager::GetTransformMatrix(int col_num_shift,Eigen::Vector3d translation)
+{
+    //实际上是是将绕z轴旋转和平移组装到一起
+    double yaw = deg2rad((float)(360 - col_num_shift * ND_PC_UNIT_SECTORANGLE));     //这里的转移矩阵旋转角与列偏移角的和是360度
+
+    cout << "yaw: " << yaw << endl;
+
+    Eigen::Matrix4d transform;
+    transform = Eigen::Matrix4d::Zero();
+    transform(0,0) = cos(yaw);
+    transform(0,1) = -sin(yaw);
+    transform(1,0) = sin(yaw);
+    transform(1,1) = cos(yaw);
+    transform(2,2) = 1;
+    transform(0,3) = -translation[0];
+    transform(1,3) = -translation[1];
+    transform(2,3) = -translation[2];       //点云平移与坐标系平移方向相反
+    transform(3,3) = 1;
+    
+    return transform;
+}
+
 //体素椭球版本 描述符偏移量计算 重合度计算
 std::pair<double, int> NDManager::NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can)
 {
@@ -1006,17 +1261,22 @@ std::pair<double, int> NDManager::NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd
     // 2. fast columnwise diff 
     int argmin_shift = 0;
     double min_sc_dist = 10000000;
-    for ( int num_shift: shift_idx_search_space )
+    for ( int num_shift_col: shift_idx_search_space )
     {
         // cout << "TEST current col shift: " << num_shift << endl << endl;
         // MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
         // double cur_sc_dist_ca = NDdistDirectSC( _sc1, sc2_shifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
-        double cur_sc_dist = NDDistVoxeleloid( v_eloid_cur, v_eloid_can, num_shift); //计算椭球重叠率
+        // int num_shift_row = NDGetringshift(translation_shift);
+        // double cur_sc_dist = NDDistVoxeleloid( v_eloid_cur, v_eloid_can, num_shift_col,num_shift_row); //计算椭球重叠率
+
+        //加入转移矩阵
+        Eigen::Vector3d translation_shift = NDGetTranslationMatrix(v_eloid_cur, v_eloid_can, num_shift_col);
+        double cur_sc_dist = NDDistVoxeleloidPlace(v_eloid_cur, v_eloid_can, num_shift_col, translation_shift);
         // double cur_sc_dist_single = NDDistVoxeleloid(v_eloid_cur, v_eloid_can, num_shift);
         // double cur_sc_dist = cur_sc_dist_col * 0.5 + cur_sc_dist_ca * 0.5;
         if( cur_sc_dist < min_sc_dist )
         {
-            argmin_shift = num_shift;
+            argmin_shift = num_shift_col;
             min_sc_dist = cur_sc_dist;
         }
         // cout << "TEST min distance: " << min_sc_dist << endl;
