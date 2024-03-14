@@ -157,7 +157,7 @@ public:
     const int    TREE_MAKING_PERIOD_ = 100; // i.e., remaking tree frequency, to avoid non-mandatory every remaking, to save time cost / in the LeGO-LOAM integration, it is synchronized with the loop detection callback (which is 1Hz) so it means the tree is updated evrey 10 sec. But you can use the smaller value because it is enough fast ~ 5-50ms wrt N.
     int          tree_making_period_conter = 0;
     double       ND_VOXEL_ELIOD_DIST_THRES = 2;
-    double       ND_VOXEL_ELIOD_COS_THRES = 0.6;
+    double       ND_VOXEL_ELIOD_COS_THRES = 0.4;
 
 
     //data
@@ -173,4 +173,7 @@ public:
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
 
     std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
+
+    std::vector<Eigen::Matrix4d> pose_ground_truth_copy;
+    int cur_frame_id,can_frame_id;
 };

@@ -234,7 +234,7 @@ public:
     ofstream prFile;                                                    //pr文件流定义
     ofstream File;                                                      //通用保存文件流定义
     string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_can-20_gt-small.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_ca_ve-compare_dist-1_cos-0.6.csv";    //ND pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_ca_ve_transform_add-near-8-voxel_dist-2.csv";    //ND pr数据储存地址
     string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_" + data_set_sq + "_ca_num_ve-test_can-20.csv";    //MIX pr数据储存地址
     //计算平移向量验证
     std::vector<std::pair<double,double> > error_arry;
@@ -316,6 +316,7 @@ public:
         getposegroundtruth();   //获取序列的pose真值
         getloopclosuregt();     //获取回环真值
 
+        ndManager.pose_ground_truth_copy.assign(pose_ground_truth.begin(),pose_ground_truth.end());
     }
 
     void allocateMemory()
@@ -536,8 +537,8 @@ public:
         // MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/001567.scd");
         // MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000122.scd");
 
-        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid copy/CloudData/003362.csv");
-        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid copy/CloudData/002417.csv");
+        std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/003362.csv");
+        std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/002417.csv");
         
         // cout << "cur_eloid num:" << cur_eloid.size() << endl;
         // cout << "can_eloid num:" << can_eloid.size() << endl;
@@ -562,26 +563,33 @@ public:
 
         cout << "translation: " << endl << translation << endl;
 
-        Eigen::Vector3d gt_center_vector = {pose_ground_truth[can](0,3) - pose_ground_truth[cur](0,3),
-                                            pose_ground_truth[can](1,3) - pose_ground_truth[cur](1,3),
-                                            pose_ground_truth[can](2,3) - pose_ground_truth[cur](2,3)};
+        // Eigen::Vector3d gt_center_vector = {pose_ground_truth[can](0,3) - pose_ground_truth[cur](0,3),
+        //                                     pose_ground_truth[can](1,3) - pose_ground_truth[cur](1,3),
+        //                                     pose_ground_truth[can](2,3) - pose_ground_truth[cur](2,3)};
 
-        double cos_vector = rad2deg(acos((translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm())));
-        double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
-                           (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
-                           (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
+        // double cos_vector = rad2deg(acos((translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm())));
+        // double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
+        //                    (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
+        //                    (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
 
-        double dist_self = sqrt((translation[0]) * (translation[0]) + 
-                                (translation[1]) * (translation[1]) +
-                                (translation[2]) * (translation[2]));
-        cout << "gt center vector: " << endl;
-        cout << gt_center_vector << endl;
-        cout << "cos error: " << cos_vector << endl;
-        cout << "dis error: " << dist << endl;
-        cout << "dis_self: " << dist_self << endl;
+        // double dist_self = sqrt((translation[0]) * (translation[0]) + 
+        //                         (translation[1]) * (translation[1]) +
+        //                         (translation[2]) * (translation[2]));
+        // cout << "gt center vector: " << endl;
+        // cout << gt_center_vector << endl;
+        // cout << "cos error: " << cos_vector << endl;
+        // cout << "dis error: " << dist << endl;
+        // cout << "dis_self: " << dist_self << endl;
 
-        double nd_dist = ndManager.NDDistVoxeleloidPlace(cur_eloid, can_eloid, 0, translation);
+        ndManager.can_frame_id = 3362;
+        ndManager.cur_frame_id = 3362;
+        double nd_dist = ndManager.NDDistVoxeleloidPlace(cur_eloid, cur_eloid, 0, translation);
         cout << "similarity: " << nd_dist;
+
+        // //点云分布可视化
+        // pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
+        // pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans/000008.pcd", *cloud);
+        // ndManager.NDmakeScancontext(*cloud);
     }
 
 
@@ -591,7 +599,7 @@ public:
     
 
     //获取pose真值
-    void getposegroundtruth()
+    void  getposegroundtruth()
     {
 
         const char *fileName = "/home/jtcx/data_set/kitti/data_odometry/dataset/poses/00.txt";
@@ -725,6 +733,7 @@ public:
         //寻找dist最大值 最小值
         for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
         {
+            cout << "index: " << pre_pair->first << "  dist: " << pre_pair->second << endl;
             min_dist = pre_pair->second < min_dist ? pre_pair->second : min_dist;
             max_dist = pre_pair->second > max_dist ? pre_pair->second : max_dist;
         }
@@ -739,15 +748,15 @@ public:
         for(value = min_dist + (max_dist-min_dist)/50; value <= max_dist; value += (max_dist-min_dist)/50)
         {
             cout << "value is: " << value << endl;
-            for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
+            for(auto pre_pair : loopclosure_id_and_dist)
             {
-                if(pre_pair->second <= value)
+                if(pre_pair.second <= value || value == 1)
                 {
                     pre_loop_num++;
-                    // cout << "pre_pair_index: " << pre_pair->first << " is loop frame" << endl;
+                    // cout << "pre_pair_index: " << pre_pair.first << " is loop frame" << endl;
                     for(auto gt_it = loopclosure_gt_index.begin(); gt_it != loopclosure_gt_index.end(); ++gt_it)
                     {
-                        if(*gt_it == pre_pair->first)
+                        if(*gt_it == pre_pair.first)
                         {
                             tp++;
                             break;
@@ -776,7 +785,7 @@ public:
             cout << "presession: " << presession << "   recall: " << recall << endl;
 
         }
-            cout << "all cloud frame num:   " << laser_cloud_frame_number << endl;
+            cout << "all cloud frame num:   " << laser_cloud_frame_number + 1 << endl;
             cout << "loop closure gt num:   " << loopclosure_gt_index.size() << endl; 
 
         return pr_data_queue;
@@ -1166,35 +1175,35 @@ public:
             return;
 
 
-        //获取平移矩阵并验证
-        {
-            int num_shift = (int)(rad2deg(yawDiffRad) / 6);
-            // cout << "cur eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyCur].size() << endl;
-            // cout << "can eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyPre].size() << endl;
-            Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(ndManager.cloud_voxel_eloid[loopKeyCur],ndManager.cloud_voxel_eloid[loopKeyPre],(int)num_shift);
+        // //获取平移矩阵并验证
+        // {
+        //     int num_shift = (int)(rad2deg(yawDiffRad) / 6);
+        //     // cout << "cur eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyCur].size() << endl;
+        //     // cout << "can eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyPre].size() << endl;
+        //     Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(ndManager.cloud_voxel_eloid[loopKeyCur],ndManager.cloud_voxel_eloid[loopKeyPre],(int)num_shift);
 
-            Eigen::Vector3d gt_center_vector = {pose_ground_truth[loopKeyCur](0,3) - pose_ground_truth[loopKeyPre](0,3),
-                                                pose_ground_truth[loopKeyCur](1,3) - pose_ground_truth[loopKeyPre](1,3),
-                                                pose_ground_truth[loopKeyCur](2,3) - pose_ground_truth[loopKeyPre](2,3)};
+        //     Eigen::Vector3d gt_center_vector = {pose_ground_truth[loopKeyCur](0,3) - pose_ground_truth[loopKeyPre](0,3),
+        //                                         pose_ground_truth[loopKeyCur](1,3) - pose_ground_truth[loopKeyPre](1,3),
+        //                                         pose_ground_truth[loopKeyCur](2,3) - pose_ground_truth[loopKeyPre](2,3)};
 
-            double cos_vector = (translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm());
-            double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
-                               (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
-                               (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
-            double dist_self = sqrt((translation[0]) * (translation[0]) + 
-                                    (translation[1]) * (translation[1]) +
-                                    (translation[2]) * (translation[2]));
-            // cout << "gt center vector: " << endl;
-            // cout << gt_center_vector << endl;
+        //     double cos_vector = (translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm());
+        //     double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
+        //                        (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
+        //                        (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
+        //     double dist_self = sqrt((translation[0]) * (translation[0]) + 
+        //                             (translation[1]) * (translation[1]) +
+        //                             (translation[2]) * (translation[2]));
+        //     // cout << "gt center vector: " << endl;
+        //     // cout << gt_center_vector << endl;
 
-            // cout << "cos_error: " << cos_vector << endl;
-            cout << "dis_error: " << dist << endl;
-            cout << "dis_self: " << dist_self << endl;
+        //     // cout << "cos_error: " << cos_vector << endl;
+        //     cout << "dis_error: " << dist << endl;
+        //     cout << "dis_self: " << dist_self << endl;
 
-            std::pair<double, double> error = {cos_vector,dist_self};
+        //     std::pair<double, double> error = {cos_vector,dist_self};
 
-            error_arry.push_back(error);
-        }
+        //     error_arry.push_back(error);
+        // }
 
         // std::cout << "[ND] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
 

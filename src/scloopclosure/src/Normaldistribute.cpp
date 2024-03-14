@@ -12,6 +12,8 @@
 
 using namespace std;
 
+void ClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::MatrixXd axis_all, Eigen::Vector3d center, int index);
+
 void NDManager::NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
     // cout << "[ND] make descriptor matrix and key" << endl;
@@ -128,6 +130,14 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
                     //填充描述矩阵
                     desc(ring_idx,sector_idx) = bin_eloid.center.z;
+
+                    // //测试，可视化体素内的点云分布  
+                    // Eigen::Vector3d center_data;
+                    // center_data[0] = bin_eloid.center.x;
+                    // center_data[1] = bin_eloid.center.y;
+                    // center_data[2] = bin_eloid.center.z;
+                    // int index = ring_idx * 60 + sector_idx;
+                    // ClouDistrubutionVisualization(bin_it,bin_eloid.axis,center_data, index);
                 }
             }
 
@@ -248,8 +258,9 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
         std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
         // std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
+        cur_frame_id = polarcontexts_.size() - 1;
+        can_frame_id = candidate_indexes[candidate_iter_idx];
         std::pair<double, int> sc_dist_result = NDdistancevoxeleloid(curr_desc, polarcontext_candidate, curr_veloid, voxel_eloid_candidate);
-        
         double candidate_dist = sc_dist_result.first;
         int candidate_align = sc_dist_result.second;
 
@@ -587,13 +598,16 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
     double num_overlap_eloid = 0;
     double all_valid_eloid = 0;
     int can_id, cur_id;
-    cout << "col shift num is:" << num_shift_col << endl;
+    // cout << "col shift num is:" << num_shift_col << endl;
 
     //计算转移矩阵
     Eigen::Matrix4d transform;
     transform = GetTransformMatrix(num_shift_col,translat);
 
-    cout << "transform: " << endl << transform << endl;
+    // 直接使用真值
+    // transform = pose_ground_truth_copy[cur_frame_id] * pose_ground_truth_copy[can_frame_id].inverse();
+
+    // cout << "transform: " << endl << transform << endl;
 
     for(int i = 0; i < ND_PC_NUM_RING * ND_PC_NUM_SECTOR; i++)
     {
@@ -601,8 +615,10 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
         // cout << "can id: " << can_id << endl;
         if(v_eloid_can[can_id].valid == 1)
         {
-            cout << endl;
+            // // 不使用转移矩阵
+            // cur_id = (i % ND_PC_NUM_SECTOR - num_shift_col + ND_PC_NUM_SECTOR) % ND_PC_NUM_SECTOR + (i - i % ND_PC_NUM_SECTOR);
 
+            //寻找cur_id
             Eigen::Vector4d can_eloid_center;
             Eigen::Vector4d can_eloid_center_shift;
             //检索对应的查询点云体素id
@@ -610,27 +626,128 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
             can_eloid_center[1] = v_eloid_can[can_id].center.y;
             can_eloid_center[2] = v_eloid_can[can_id].center.z;
             can_eloid_center[3] = 1;
-
             can_eloid_center_shift = transform * can_eloid_center;
-            cout << "can id is: " << can_id << endl;
-            cout << "after shift can center is: " << can_eloid_center_shift << endl;
+            // cout << "can id is: " << can_id << endl;
+            // cout << "before shift can center is: " << endl << can_eloid_center << endl;
+            // cout << "after shift can center is: " << endl << can_eloid_center_shift << endl;
  
             // xyz to ring, sector
             double azim_range = sqrt(can_eloid_center_shift[0] * can_eloid_center_shift[0] + can_eloid_center_shift[1] * can_eloid_center_shift[1]);   //求点到传感器中心的距离
-            double azim_angle = xy2theta(can_eloid_center_shift[0], can_eloid_center_shift[0]);              //输出theta角        
-
+            double azim_angle = xy2theta(can_eloid_center_shift[0], can_eloid_center_shift[1]);              //输出theta角        
             if( azim_range > ND_PC_MAX_RADIUS )     //判断点距离传感器距离是否超出最大值
             {            
-                cur_id = -1;
+                cur_id = -1;    //直接不予考虑
                 continue;
             }            
-
-            // cout << "[ND] computer bin index" << endl;
             int ring_idx = std::max( std::min( ND_PC_NUM_RING, int(ceil( (azim_range / ND_PC_MAX_RADIUS) * ND_PC_NUM_RING )) ), 1 );    //从1开始
             int sector_idx = std::max( std::min( ND_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * ND_PC_NUM_SECTOR )) ), 1 );
 
-            cur_id = ring_idx * ND_PC_NUM_SECTOR + sector_idx;
-            cout << "cur id is: " << cur_id << endl;
+            cur_id = (ring_idx - 1) * ND_PC_NUM_SECTOR + (sector_idx - 1);
+            // cout << "cur id is: " << cur_id << endl;
+
+
+
+            // //查询点云的体素id可靠性判断 若对应的查询点云体素不可靠，搜寻附近体素
+            // if(v_eloid_cur[cur_id].valid != 1)
+            // {
+            //     double min_dist = 1000;
+            //     int _cur_id = (cur_id + 1) % 60 + (int)(cur_id / 60) * 60;    //下一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     } 
+            //     _cur_id = (cur_id - 1 + 60) % 60 + (int)(cur_id / 60) * 60;   //上一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     } 
+            //     _cur_id = (cur_id + 60) % 1200;     //下一环体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }  
+            //     _cur_id = (cur_id - 60 + 1200) % 1200;  //上一环体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }  
+            //     _cur_id = ((cur_id + 60  + 1) % 60 + (int)(cur_id / 60) * 60 + 60) % 1200;  //下一环下一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }  
+            //     _cur_id = ((cur_id + 60 - 1) % 60 + (int)(cur_id / 60) * 60 + 60) % 1200;      //下一环上一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }  
+            //     _cur_id = ((cur_id + 60 + 1) % 60 + (int)(cur_id / 60) * 60 - 60 + 1200) % 1200;          //上一环下一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }  
+            //     _cur_id = ((cur_id + 60 - 1) % 60 + (int)(cur_id / 60) * 60 - 60 + 1200) % 1200;          //上一环上一个体素
+            //     if(v_eloid_cur[_cur_id].valid != 1)
+            //     {
+            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
+            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
+            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
+            //         if(_dist < min_dist)
+            //         {
+            //             min_dist = _dist;
+            //             cur_id = _cur_id;
+            //         }
+            //     }                                           
+            // }
 
             double dist = 0;
             double dist_mid = 0;
@@ -645,6 +762,7 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
                 can_eloid_shift.center.y = can_eloid_center_shift[1];
                 can_eloid_shift.center.z = can_eloid_center_shift[2];
 
+                //利用转移矩阵转移候选点云的椭球轴
                 Eigen::MatrixXd _can_eloid_axis;
                 _can_eloid_axis.resize(4,3);
                 _can_eloid_axis.block<3,3>(0,0) = v_eloid_can[can_id].axis;
@@ -656,16 +774,16 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
                 {
                     // cout << "cur id: " << cur_id << " cur length: " << v_eloid_cur[cur_id].axis_length[ii] 
                     //      << " can id: " << can_id << " can length: " << v_eloid_can[can_id].axis_length[ii] << endl;
-                    dist += (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]) * (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]);
+                    // dist += (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]) * (v_eloid_cur[cur_id].axis_length[ii] - v_eloid_can[can_id].axis_length[ii]);
                 }
-                dist = sqrt(dist);
-                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " length distance: " << dist << endl;
+                // dist = sqrt(dist);
+                // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " length distance: " << dist << endl;
 
                 dist_mid = sqrt((v_eloid_cur[cur_id].center.x - can_eloid_shift.center.x) * (v_eloid_cur[cur_id].center.x - can_eloid_shift.center.x) +
                     (v_eloid_cur[cur_id].center.y - can_eloid_shift.center.y) * (v_eloid_cur[cur_id].center.y - can_eloid_shift.center.y) +
                     (v_eloid_cur[cur_id].center.z - can_eloid_shift.center.z) * (v_eloid_cur[cur_id].center.z - can_eloid_shift.center.z));
 
-                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " center distance: " << dist_mid << endl;
+                // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << " center distance: " << dist_mid << endl;
                 
 
                 for(int iii = 0; iii < v_eloid_cur[cur_id].axis.cols(); iii++){
@@ -677,20 +795,24 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
 
                         cos_col_ve += abs(((cur_col_axis.dot(can_col_axis)) / (cur_col_axis.norm() * can_col_axis.norm())));
                 }
-
                 cos_col_ve /= 3;
-                cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  cosine: " << cos_col_ve << endl;
-                // if(dist < ND_VOXEL_ELIOD_DIST_THRES && cos_col_ve > ND_VOXEL_ELIOD_COS_THRES)            //长度差 + cosine
+                // cout << "voxel ellipsoid cur id: " << cur_id << "  can id: " << can_id << "  cosine: " << cos_col_ve << endl;
+
+
+                if(dist_mid < ND_VOXEL_ELIOD_DIST_THRES && cos_col_ve > ND_VOXEL_ELIOD_COS_THRES)            //中心距离 + cosine
                 // if(dist < ND_VOXEL_ELIOD_DIST_THRES && dist_mid > ND_VOXEL_ELIOD_DIST_THRES)             //中心距离 + 长度差
-                if(dist < ND_VOXEL_ELIOD_DIST_THRES)                                                        //长度差
+                // if(dist_mid < ND_VOXEL_ELIOD_DIST_THRES)                                                    //中心距离
+                // if(dist < ND_VOXEL_ELIOD_DIST_THRES)                                                       //长度差
                     num_overlap_eloid++;
             }
 
             all_valid_eloid++;
         }
     }
-    cout << "all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
+    // cout << "all valid voxel ellipsoid num: " << all_valid_eloid << "  overlap voxel ellipsoid num: " << num_overlap_eloid << endl;
 
+    if(all_valid_eloid == 0)
+        return 1;
     return (double)(1- (num_overlap_eloid / all_valid_eloid));
     
 }
@@ -1182,7 +1304,7 @@ Eigen::Vector3d NDManager::NDGetTranslationMatrix(std::vector<class Voxel_Ellips
         cur_avg_translation += cur_z_arry[col];
         can_avg_translation += can_z_arry[col];
     }
-    cout << "col vaild cnt: " << col_vaild_cnt << endl;
+    // cout << "col vaild cnt: " << col_vaild_cnt << endl;
 
     cur_avg_translation /= (double)col_vaild_cnt;
     can_avg_translation /= (double)col_vaild_cnt;
@@ -1223,7 +1345,7 @@ Eigen::Matrix4d NDManager::GetTransformMatrix(int col_num_shift,Eigen::Vector3d 
     //实际上是是将绕z轴旋转和平移组装到一起
     double yaw = deg2rad((float)(360 - col_num_shift * ND_PC_UNIT_SECTORANGLE));     //这里的转移矩阵旋转角与列偏移角的和是360度
 
-    cout << "yaw: " << yaw << endl;
+    // cout << "yaw: " << yaw << endl;
 
     Eigen::Matrix4d transform;
     transform = Eigen::Matrix4d::Zero();
@@ -1264,14 +1386,18 @@ std::pair<double, int> NDManager::NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd
     for ( int num_shift_col: shift_idx_search_space )
     {
         // cout << "TEST current col shift: " << num_shift << endl << endl;
-        // MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
+        // MatrixXd sc2_shifted = circshift(_sc2, num_shift_col);  //列位移函数
         // double cur_sc_dist_ca = NDdistDirectSC( _sc1, sc2_shifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
+
+        // //椭球重叠率（偏移一一对齐） + 转移矩阵
+        // Eigen::Vector3d translation_shift = NDGetTranslationMatrix(v_eloid_cur, v_eloid_can, num_shift_col);
         // int num_shift_row = NDGetringshift(translation_shift);
         // double cur_sc_dist = NDDistVoxeleloid( v_eloid_cur, v_eloid_can, num_shift_col,num_shift_row); //计算椭球重叠率
 
         //加入转移矩阵
         Eigen::Vector3d translation_shift = NDGetTranslationMatrix(v_eloid_cur, v_eloid_can, num_shift_col);
         double cur_sc_dist = NDDistVoxeleloidPlace(v_eloid_cur, v_eloid_can, num_shift_col, translation_shift);
+        
         // double cur_sc_dist_single = NDDistVoxeleloid(v_eloid_cur, v_eloid_can, num_shift);
         // double cur_sc_dist = cur_sc_dist_col * 0.5 + cur_sc_dist_ca * 0.5;
         if( cur_sc_dist < min_sc_dist )
@@ -1336,8 +1462,51 @@ void NDManager::NDSaveVoxelellipsoidData(std::vector<class Voxel_Ellipsoid> v_el
     outFile.close();
 } 
 
-// //体素椭球结果保存函数
-// void NDManager::NDSaveVoxelellipsoidResult(std::vector<class Voxel_Ellipsoid> v_eloid_data, int id)
-// {
-    
-// }
+//体素点云分布情况可视化 概率分布函数
+void ClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::MatrixXd axis_all, Eigen::Vector3d center, int index)
+{
+    Eigen::Vector3d max_axis = axis_all.col(0);
+    vector<double> dist;
+    double probability[50] = {0};
+
+    for(auto it : leaf_cloud)
+    {
+        Eigen::Vector3d leaf_point_shift = it - center;
+        if(leaf_point_shift.norm() == 0 || center.norm() == 0)
+            continue; // don't count this sector pair.
+        double distance = ((leaf_point_shift.dot(center)) / (center.norm()));
+        dist.push_back(distance);
+    }
+
+    sort(dist.begin(),dist.end());
+    double uint = abs(dist.back() - dist.front()) / 50.0;
+    cout << endl << "index: " << index << " " << dist.front() << "  " << dist.back() << "   " << uint << endl;
+
+    int point_num = dist.size();
+
+    //求个点落在对应区间的数量
+    for(auto it : dist)
+    {
+        int index = ceil((it - dist.front()) / uint);
+        if (index > 50)
+            index = 50;
+        probability[index]  += 1;
+    }
+
+    //计算概率分布函数
+    cout << "num: " << endl;
+    for(int i = 1; i < 50; i++)
+    {
+        cout << probability[i] << ",";
+        probability[i] += probability[i - 1];
+    }
+
+    cout << endl << "probability: " << endl;
+    for(int i = 0; i < 50; i++)
+    {
+        probability[i] /= point_num;
+
+        cout << probability[i] << ",";
+    }
+    cout << endl;
+}
