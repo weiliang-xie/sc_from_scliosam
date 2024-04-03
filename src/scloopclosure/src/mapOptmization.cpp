@@ -23,6 +23,7 @@
 #include "Scancontext.h"
 #include "Normaldistribute.h"
 #include "Mixdescriptor.h"
+#include "Ellipsoiddescriptor.h"
 
 
 using namespace gtsam;
@@ -207,6 +208,8 @@ public:
     NDManager ndManager;    //ND类定义
     MIXManager mixManager;   //混合类定义
 
+    EllipsoidLocalization elmanager;     //椭球类定义
+
     // data saver
     std::fstream pgSaveStream; // pg: pose-graph 
     std::fstream pgTimeSaveStream; // pg: pose-graph 
@@ -230,7 +233,7 @@ public:
     std::vector<Eigen::Matrix4d> pose_ground_truth;
     std::vector<Eigen::Matrix4d> pose_final_change;
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
-    std::vector<int> loopclosure_gt_index;  //回环真值id队列
+    std::vector<std::pair<int, int> > loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
     ofstream File;                                                      //通用保存文件流定义
     string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_can-20_gt-small.csv";    //SC pr数据储存地址
@@ -534,9 +537,19 @@ public:
     {
         int cur = 3362;
         int can = 2417;
+        //读取点云原始数据
+        pcl::PointCloud<PointType>::Ptr cur_cloud(new pcl::PointCloud<PointType>());
+        pcl::PointCloud<PointType>::Ptr similar_cloud(new pcl::PointCloud<PointType>());
+        pcl::PointCloud<PointType>::Ptr dissimilar_cloud(new pcl::PointCloud<PointType>());
+        pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/003304.pcd", *cur_cloud);        
+        pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/000724.pcd", *similar_cloud);        
+        pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/000002.pcd", *dissimilar_cloud);        
+
+        //读取sc矩阵
         // MatrixXd cur_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/001567.scd");
         // MatrixXd can_des = test_load_csv_descriptor<MatrixXd>("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMND/SCDs copy/000122.scd");
 
+        //读取椭球参数
         std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/003362.csv");
         std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/002417.csv");
         
@@ -559,9 +572,9 @@ public:
         // cout << "cos error: " << cos_vector << endl;
 
         //平移矩阵获取验证
-        Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(cur_eloid,can_eloid,0);
+        // Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(cur_eloid,can_eloid,0);
 
-        cout << "translation: " << endl << translation << endl;
+        // cout << "translation: " << endl << translation << endl;
 
         // Eigen::Vector3d gt_center_vector = {pose_ground_truth[can](0,3) - pose_ground_truth[cur](0,3),
         //                                     pose_ground_truth[can](1,3) - pose_ground_truth[cur](1,3),
@@ -581,15 +594,53 @@ public:
         // cout << "dis error: " << dist << endl;
         // cout << "dis_self: " << dist_self << endl;
 
-        ndManager.can_frame_id = 3362;
-        ndManager.cur_frame_id = 3362;
-        double nd_dist = ndManager.NDDistVoxeleloidPlace(cur_eloid, cur_eloid, 0, translation);
-        cout << "similarity: " << nd_dist;
+        // ndManager.can_frame_id = 3362;
+        // ndManager.cur_frame_id = 3362;
+        // double nd_dist = ndManager.NDDistVoxeleloidPlace(cur_eloid, cur_eloid, 0, translation);
+        // cout << "similarity: " << nd_dist << endl;
 
-        // //点云分布可视化
-        // pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
-        // pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans/000008.pcd", *cloud);
         // ndManager.NDmakeScancontext(*cloud);
+
+
+        //eloid hash测试
+        // elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
+        // auto it = elmanager.eloid_eigen_map.find(250821);
+        // std::cout << "frame_id: " << it->second.back() << endl;
+        // auto it1 = elmanager.eloid_eigen_map.find(250822);
+        // if(it1 != elmanager.eloid_eigen_map.end())
+        //     std::cout << "frame_id: " << it1->second.back() << endl;
+        // else 
+        //     std::cout << "frame_id is non-existent " << endl;
+
+        //eloid key 对比测试
+        elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
+        elmanager.MakeEllipsoidDescriptor(*similar_cloud,1);
+        elmanager.MakeEllipsoidDescriptor(*dissimilar_cloud,2);
+
+        //key数据
+        for(auto frame_key : elmanager.frame_eloid_key)
+        {
+            for(auto key : frame_key)
+            {
+                cout << key << ",";
+            }
+            cout << endl;
+        }
+
+        //椭球数据
+        for(auto frame_eloid_it : elmanager.frame_eloid)
+        {
+            for(auto nonground_eloid_it : frame_eloid_it.nonground_voxel_eloid)
+            {
+                // cout << nonground_eloid_it.num_exit << ",";
+            }
+            // cout << endl;
+        }
+
+        // //点云可视化
+        // pcl::visualization::PCLVisualizer viewer;
+        // viewer.setBackgroundColor(100,100,100); //设置背景颜色为黑色
+        // // pcl::visualization::PointCloudColorHandlerCustom<PointType> green(*cloud)
     }
 
 
@@ -696,19 +747,21 @@ public:
                 // cout << "cur and his distance: " << distance << endl;
                 if (distance <= 5)
                 {
-                    loopclosure_gt_index.push_back(cur_index);
+                    std::pair<int, int> gt_id =  {cur_index, i};
+                    loopclosure_gt_index.push_back(gt_id);
                     break; 
                 }
             }
         }
         cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
-        //打印真值ID
+
+        // // 打印真值ID
         // for(auto &gt_data : loopclosure_gt_index)
         // {
-        //     cout << gt_data << " ";
+        //     cout << "cur id: " << gt_data.first << "  his id: " << gt_data.second << endl;
         // }
         // cout <<endl;
-        cout << "finish get loop closure gt" << endl;
+        // cout << "finish get loop closure gt" << endl;
     }
 
 
@@ -756,7 +809,7 @@ public:
                     // cout << "pre_pair_index: " << pre_pair.first << " is loop frame" << endl;
                     for(auto gt_it = loopclosure_gt_index.begin(); gt_it != loopclosure_gt_index.end(); ++gt_it)
                     {
-                        if(*gt_it == pre_pair.first)
+                        if((*gt_it).first == pre_pair.first)
                         {
                             tp++;
                             break;
@@ -904,6 +957,7 @@ public:
 
         static double timeLastProcessing = -1;
         // if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)    //判断接收点云的间隔有没有大于映射间隔
+        if(laser_cloud_frame_number % 2 == 0)           //过滤一半点云
         {
             // std::cout << "xwl enter deal function" << std::endl;
             timeLastProcessing = timeLaserInfoCur;
@@ -912,15 +966,19 @@ public:
 
             // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
-            NDsaveKeyFramesAndFactor();     //制作ND描述符
+            // NDsaveKeyFramesAndFactor();     //制作ND描述符
 
             // MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
+            SaveFrameEllipsoidDescriptor();      //制作eloid描述符
+
             // performSCLoopClosure();      //求解SC回环状态
 
-            NDperformSCLoopClosure();      //求解ND回环状态
+            // NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
+
+            EloidperformSCLoopClosure();           //求解eloid的回环状态
 
             publishFrames();             //发布路径
 
@@ -1304,7 +1362,7 @@ public:
         // add loop constriant
         // loopIndexContainer[loopKeyCur] = loopKeyPre;
         // loopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
-    } // performSCLoopClosure
+    }
 
     void MIXperformSCLoopClosure()     //执行MIX回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
     {
@@ -1323,6 +1381,47 @@ public:
 
         // std::cout << "[MIX] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
     }
+
+    void EloidperformSCLoopClosure()
+    {
+        std::vector<int> detectResult = elmanager.DetectLoopClosureID(laser_cloud_frame_number);
+
+        //候选id与真值对比
+        static double loop_true_num = 0;
+        static double loop_num = 0;
+        if(detectResult.empty() == 0)
+        {
+            int loop_enable = 0;
+            int loop_true  = 0;
+            int loop_true_id = -1;
+            for(auto gt_it : loopclosure_gt_index)
+            {
+                if(gt_it.first == laser_cloud_frame_number)
+                {
+                    loop_enable = 1;
+                    loop_true_id = gt_it.second;
+                    loop_num++;
+                }
+
+            }
+            for(auto detectresult_it : detectResult)
+            {  
+                if(detectresult_it <= (loop_true_id + 20) && detectresult_it >= (loop_true_id - 20))  //满足在20帧内？
+                {
+                    loop_true = 1;
+                }
+            }
+            if(loop_enable && loop_true)
+                loop_true_num++;
+        }
+
+        if(laser_cloud_frame_number == 4540)
+        { 
+            cout << "loop true num: " << loop_true_num << endl;
+            cout << "can id current ratio: " << loop_true_num / loop_num << endl;
+        }
+
+    } 
 
     void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum)
     {
@@ -1516,6 +1615,20 @@ public:
         pgTimeSaveStream << laserCloudRawTime << std::endl;        
     }
 
+    void SaveFrameEllipsoidDescriptor()     //ELOID描述符制作
+    {
+        if (saveFrame() == false)   //判断是否满足保存关键帧的要求
+            return;
+
+        // std::cout << "[ND] make and save ND scan context and keys" << std::endl;
+
+        pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
+        pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);                                //复制点云
+        elmanager.MakeEllipsoidDescriptor(*thisRawCloudKeyFrame, laser_cloud_frame_number);                                   //使用点云进行描述符制作
+        // ndManager.context_origin_index.push_back(laser_cloud_frame_number);                      //保存原始点云帧序号        
+
+    }
+
 
 
     void updatePath(const PointTypePose& pose_in)   //发布路径更新路径
@@ -1577,19 +1690,6 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "lio_sam");
 
     mapOptimization MO;
-
-    // Eigen::Vector3d m1,m2,m3;
-    // m1 << 1.2, 2.5, 5.6;
-    // m2 << -3.6, 9.2, 0.5;
-    // m3 << 4.3, 1.3, 9.4;
-    // std::vector<Eigen::Vector3d> piont;
-    // piont.push_back(m1);
-    // piont.push_back(m2);
-    // piont.push_back(m3);
-
-    // Eigen::MatrixXd cov;
-    // cov = MO.ndManager.NDGetCovarMatrix(piont);
-    // MO.ndManager.NDGetSingularvalue(cov);
 
     MO.testcode();
 

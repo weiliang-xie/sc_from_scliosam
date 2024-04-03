@@ -45,9 +45,9 @@ using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
 
 //椭球模型
-class Ellipsoid{
+class old_Ellipsoid{
 public:
-    Ellipsoid(){
+    old_Ellipsoid(){
         center = {0};
         axis.resize(3,3);
         cov.resize(3,3);
@@ -65,7 +65,7 @@ public:
     Eigen::MatrixXd cov;
 };
 
-class Voxel_Ellipsoid: public Ellipsoid{
+class Voxel_Ellipsoid: public old_Ellipsoid{
 public:
     Voxel_Ellipsoid(){
         valid = 0;
@@ -79,7 +79,7 @@ public:
     SCPointType max_h_center;       //测试 最大高度
 };
 
-class Refer_Ellipsoid: public Ellipsoid{
+class Refer_Ellipsoid: public old_Ellipsoid{
 public:
     std::vector<int> id;
 };
