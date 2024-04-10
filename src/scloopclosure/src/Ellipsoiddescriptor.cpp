@@ -12,16 +12,19 @@
 
 using namespace std;
 
-//描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
-void EllipsoidLocalization::MakeEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
+//特征数据库描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
+void EllipsoidLocalization::MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
 {
-    BulidingEllipsoidModel(DivideVoxel(_scan_cloud));
-    // cout << "ground eloid num is: " << frame_eloid.back().ground_voxel_eloid.size() << endl;
-    // cout << "non ground eloid num is: " << frame_eloid.back().nonground_voxel_eloid.size() << endl;
+    DivideVoxel(_scan_cloud);
+    database_frame_eloid.push_back(BulidingEllipsoidModel());
+    cout << "Make Dataset Descriptor  Dataset Frame Make Eloid  ground eloid num is: " << database_frame_eloid.back().ground_voxel_eloid.size() << endl;
+    cout << "Make Dataset Descriptor  Dataset Frame Make Eloid  non ground eloid num is: " << database_frame_eloid.back().nonground_voxel_eloid.size() << endl;
+    cout << endl;
+
 
     //填入hash
     std::vector<int> cur_frame_eigen_key;
-    for(auto non_gd_it : frame_eloid.back().nonground_voxel_eloid)
+    for(auto non_gd_it : database_frame_eloid.back().nonground_voxel_eloid)
     {
         // cout << non_gd_it.num_exit << " " << non_gd_it.center[2] << ",";
         int eigen_key = GetEloidEigenKey(non_gd_it);
@@ -48,10 +51,33 @@ void EllipsoidLocalization::MakeEllipsoidDescriptor(pcl::PointCloud<SCPointType>
 
             cur_frame_eigen_key.push_back(eigen_key);
         }
-        // cout << "hash key: " << GetEloidEigenKey(non_gd_it) << endl;
     }
     // cout << endl;
-    frame_eloid_key.push_back(cur_frame_eigen_key);
+    database_frame_eloid_key.push_back(cur_frame_eigen_key);
+}
+
+//当前帧描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
+void EllipsoidLocalization::MakeInquiryEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
+{
+    DivideVoxel(_scan_cloud);
+    cur_frame_eloid.push_back(BulidingEllipsoidModel());
+    cout << "Cur Frame Make Eloid  ground eloid num is: " << cur_frame_eloid.back().ground_voxel_eloid.size() << endl;
+    cout << "Cur Frame Make Eloid  non ground eloid num is: " << cur_frame_eloid.back().nonground_voxel_eloid.size() << endl;
+    cout << endl;
+
+    //填入hash
+    std::vector<int> cur_frame_eigen_key;
+    for(auto non_gd_it : cur_frame_eloid.back().nonground_voxel_eloid)
+    {
+        // cout << non_gd_it.num_exit << " " << non_gd_it.center[2] << ",";
+        int eigen_key = GetEloidEigenKey(non_gd_it);
+        if(eigen_key != -1)
+        {
+            cur_frame_eigen_key.push_back(eigen_key);
+        }
+    }
+    // cout << endl;
+    cur_frame_eloid_key.push_back(cur_frame_eigen_key);
 }
 
 //获取特征值的hash键值 返回 键值
@@ -72,7 +98,7 @@ int EllipsoidLocalization::GetEloidEigenKey(Ellipsoid eloid)
     //     result = (int)(((double)eloid.mode + eloid.eigen[2] / eloid.eigen[0] + round(eloid.center[2])) * 100000);
     // }
 
-    if(eloid.mode != -1 && eloid.num_exit > 32)
+    if(eloid.mode != -1)
         result = (int)(eloid.num_exit + eloid.mode * 1000);
 
     // cout << "hash key: " << result << endl;
@@ -92,16 +118,17 @@ vector<int> EllipsoidLocalization::GetHashFrameID(int key)
 //回环检测函数 暂时先返回候选ID
 std::vector<int> EllipsoidLocalization::DetectLoopClosureID(int frame_id)
 {
+    static int max_frame_id = 4541;
     int loop_id { -1 }; 
     //是否满足数量要求
-    if( (int)frame_eloid.size() < NUM_EXCLUDE_FIRST + 1) //储存的描述符数量是否足够
+    if( (int)database_frame_eloid.size() < NUM_EXCLUDE_FIRST + 1) //储存的描述符数量是否足够
     {
         // std::pair<int, float> result {loop_id, 0.0};
         return std::vector<int>(); // Early return         
     }
     
-    auto curr_key = frame_eloid_key.back();         //查询帧key值
-    vector<int> vote_num(frame_id, 0);          //存放投票数量的结构体，用于进一步判断
+    auto curr_key = cur_frame_eloid_key.back();         //查询帧key值
+    vector<int> vote_num(max_frame_id, 0);          //存放投票数量的结构体，用于进一步判断
     for(auto it : curr_key)
     {
         std::vector<int> can_id_queue;
@@ -116,7 +143,7 @@ std::vector<int> EllipsoidLocalization::DetectLoopClosureID(int frame_id)
                 //ID投票
                 for(auto can_id_it : can_id_queue)
                 {
-                    if(can_id_it < frame_id - NUM_EXCLUDE_RECENT)
+                    if(can_id_it < max_frame_id)
                         vote_num[can_id_it]++;
                     // cout << "vote id: " << can_id_it << " one ticket" << endl;
                 }
@@ -135,7 +162,7 @@ std::vector<int> EllipsoidLocalization::DetectLoopClosureID(int frame_id)
 
         //判断是否为回环检测区域内
         int max_id = std::distance(vote_num.begin(), max_vote_it);
-        if(max_id < frame_id - NUM_EXCLUDE_RECENT)
+        if(max_id < max_frame_id)
         {
             can_id.push_back(max_id);
             can_vote_num.push_back(*max_vote_it);

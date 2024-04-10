@@ -50,14 +50,22 @@ using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 class EllipsoidLocalization : public BaseGlobalLocalization //全局算法基类
 {
 public:
-    std::vector<std::vector<int> > frame_eloid_key;             //各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
+    std::vector<Frame_Ellipsoid> database_frame_eloid;                   //数据库存储的椭球模型
+    std::vector<Frame_Ellipsoid> cur_frame_eloid;                        //存储的查询帧椭球模型
+
+    std::vector<std::vector<int> > database_frame_eloid_key;             //数据库中各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
+    std::vector<std::vector<int> > cur_frame_eloid_key;                  //查询帧各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
+
+
 
     std::unordered_map<int, vector<int> > eloid_eigen_map;              //椭球特征值的hash
 
     //eloid
-    void MakeEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
+    void MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
+    void MakeInquiryEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
     int GetEloidEigenKey(Ellipsoid eloid);
     vector<int> GetHashFrameID(int key);
 
     std::vector<int> DetectLoopClosureID(int frame_id);
+
 };

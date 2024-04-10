@@ -218,6 +218,7 @@ public:
     // std::fstream pgVertexSaveStream;
     // std::fstream pgEdgeSaveStream;
 
+    std::string saveMapPCDDirectory; //地图原始帧存储地址
     std::string saveSCDDirectory;
     std::string saveNodePCDDirectory;
     std::string NDsaveSCDDirectory;
@@ -227,7 +228,9 @@ public:
 
     //xwl 修改添加
     string data_set_sq = "00";
+    int data_set_frame_num = 4541;
     int16_t laser_cloud_frame_number;   //实时更新的当前帧id
+    int gt_frame_index;                //gt的序号值
     Eigen::MatrixXd sc_pose_origin;
     Eigen::MatrixXd sc_pose_change;
     std::vector<Eigen::Matrix4d> pose_ground_truth;
@@ -257,7 +260,9 @@ public:
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
 
         // subCloud = nh.subscribe<lio_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
-        subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
+        // subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
+        //gt数据集用
+        subCloud = nh.subscribe<sensor_msgs::PointCloud2>("/lio_sam/mapping/gt_loop_closure_cloud", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());   //TODO 根据话题修改订阅话题名
 
         pubHistoryKeyFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_history_cloud", 1);
         pubIcpKeyFrames       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_corrected_cloud", 1);
@@ -284,6 +289,10 @@ public:
         // savePCDDirectory = std::getenv("HOME") + savePCDDirectory; // rather use global path 
         int unused = system((std::string("exec rm -r ") + savePCDDirectory).c_str());
         unused = system((std::string("mkdir ") + savePCDDirectory).c_str());
+
+        saveMapPCDDirectory = savePCDDirectory + "RawMapScans/";
+        // unused = system((std::string("exec rm -r ") + saveMapPCDDirectory).c_str());
+        // unused = system((std::string("mkdir -p ") + saveMapPCDDirectory).c_str());
 
         saveSCDDirectory = savePCDDirectory + "SC/SCDs/"; // SCD: scan context descriptor 
         unused = system((std::string("exec rm -r ") + saveSCDDirectory).c_str());
@@ -314,7 +323,8 @@ public:
         // pgVertexSaveStream = std::fstream(savePCDDirectory + "singlesession_vertex.g2o", std::fstream::out);
         // pgEdgeSaveStream = std::fstream(savePCDDirectory + "singlesession_edge.g2o", std::fstream::out);
 
-        laser_cloud_frame_number = -1;
+        // laser_cloud_frame_number = -1;
+        gt_frame_index = -1;
 
         getposegroundtruth();   //获取序列的pose真值
         getloopclosuregt();     //获取回环真值
@@ -612,30 +622,30 @@ public:
         // else 
         //     std::cout << "frame_id is non-existent " << endl;
 
-        //eloid key 对比测试
-        elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
-        elmanager.MakeEllipsoidDescriptor(*similar_cloud,1);
-        elmanager.MakeEllipsoidDescriptor(*dissimilar_cloud,2);
+        // //eloid key 对比测试
+        // elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
+        // elmanager.MakeEllipsoidDescriptor(*similar_cloud,1);
+        // elmanager.MakeEllipsoidDescriptor(*dissimilar_cloud,2);
 
-        //key数据
-        for(auto frame_key : elmanager.frame_eloid_key)
-        {
-            for(auto key : frame_key)
-            {
-                cout << key << ",";
-            }
-            cout << endl;
-        }
+        // //key数据
+        // for(auto frame_key : elmanager.frame_eloid_key)
+        // {
+        //     for(auto key : frame_key)
+        //     {
+        //         cout << key << ",";
+        //     }
+        //     cout << endl;
+        // }
 
-        //椭球数据
-        for(auto frame_eloid_it : elmanager.frame_eloid)
-        {
-            for(auto nonground_eloid_it : frame_eloid_it.nonground_voxel_eloid)
-            {
-                // cout << nonground_eloid_it.num_exit << ",";
-            }
-            // cout << endl;
-        }
+        // //椭球数据
+        // for(auto frame_eloid_it : elmanager.database_frame_eloid)
+        // {
+        //     for(auto nonground_eloid_it : frame_eloid_it.nonground_voxel_eloid)
+        //     {
+        //         // cout << nonground_eloid_it.num_exit << ",";
+        //     }
+        //     // cout << endl;
+        // }
 
         // //点云可视化
         // pcl::visualization::PCLVisualizer viewer;
@@ -876,7 +886,8 @@ public:
         {
             File << data->first << "," << data->second << endl;
         }
-        File.close();        
+        File.close();  
+        cout << "MapOptimization   save data fuction finish saving" << endl;      
     }
 
     void makeandsaveprcurve()
@@ -897,12 +908,6 @@ public:
         saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
         saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
     }
-
-
-
-
-
-
 
     //更新路径
     void updataposepath(Eigen::Matrix4d pose)
@@ -929,6 +934,74 @@ public:
     }
 
 
+    //保存原始点云帧
+    void SaveCloudFrame(int frame_idx)
+    {
+        std::string cur_frame_idx = padZeros(frame_idx);
+        pcl::PointCloud<PointType>::Ptr thisRawCloudFrame(new pcl::PointCloud<PointType>());
+        pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudFrame);  //复制点云
+        pcl::io::savePCDFileBinary(saveMapPCDDirectory + cur_frame_idx + ".pcd", *thisRawCloudFrame);
+    }
+
+    //建立地图数据库（记录特定的点云帧） 去除真值帧
+    void MakeMapFeatureBase()
+    {
+        static int frame_gap = 4;   //记录间隔的多少帧
+        for(int i = 0; i < data_set_frame_num; i++)
+        {
+            int idx_loop_enable = 0;
+            //剔除回环真值帧    
+            for(auto gt_it : loopclosure_gt_index)
+            {
+                if(i == gt_it.first)
+                    idx_loop_enable = 1;
+            }
+
+            if(idx_loop_enable == 0 && i % frame_gap == 0)
+            {
+                std::string frame_idx = padZeros(i);
+                pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
+                pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *_rawcloud); 
+                elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
+            }
+  
+        }
+        cout << "finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
+
+        //体素分割效果测试数据保存
+
+        string error_file = savePCDDirectory + "ND/others/nd_kitti_" + "00" + "_segment_perform_pr.csv";
+        savedata(error_file, "presession", "recall", elmanager.frame_seg_presession_recall);
+    }
+
+    //提取真值点云帧
+    void GetGroundtrueFrame()
+    {
+        ros::Rate loop_rate(10);
+        ros::Publisher pubGTFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/gt_loop_closure_cloud", 1);
+        if (pubGTFrames.getNumSubscribers() != 0)
+        {
+            pcl::PointCloud<PointType>::Ptr gt_cloud(new pcl::PointCloud<PointType>());
+
+            for(int i = 0; i < data_set_frame_num; i++)
+            {
+                for(auto gt_it : loopclosure_gt_index)
+                {
+                    if(i == gt_it.first)
+                    {
+                        std::string frame_idx = padZeros(i);
+                        pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *gt_cloud); 
+                        publishCloud(&pubGTFrames, gt_cloud, timeLaserInfoStamp, odometryFrame);
+                        // cout << "publish gt frame " << i << endl;
+                        loop_rate.sleep();
+                    }      
+                }
+            } 
+        }
+        cout << "finish publish gt frame" << endl;   
+    }  
+
+
     // void laserCloudInfoHandler(const lio_sam::cloud_infoConstPtr& msgIn)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     void laserCloudInfoHandler(const sensor_msgs::PointCloud2ConstPtr& msg)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     {
@@ -942,7 +1015,8 @@ public:
         //TODO 需要提取消息中的点云数据
         pcl::fromROSMsg(*msg, *laserCloudRaw); // giseop    //*将接收到的点云转换成laserCloudRaw
         laserCloudRawTime = cloudinfo_new.header.stamp.toSec(); // giseop save node time
-        laser_cloud_frame_number++;
+        gt_frame_index++;
+        laser_cloud_frame_number = loopclosure_gt_index[gt_frame_index].first;
         // cout << "xwl receive time is " << laserCloudRawTime << "    frame number is " << laser_cloud_frame_number << endl;
 
         // static tf    发布odom坐标系
@@ -953,11 +1027,14 @@ public:
         //更新路径
         updataposepath(pose_ground_truth[laser_cloud_frame_number]);
 
+        //存储原始点云数据 pcd 同时需要将初始化中的文件夹初始化取消注释
+        // SaveCloudFrame(laser_cloud_frame_number);
+
         std::lock_guard<std::mutex> lock(mtx);  //开启互斥锁 lock_guard互斥锁的一种写法，在构造函数内加锁，析构函数中自动解锁
 
         static double timeLastProcessing = -1;
         // if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)    //判断接收点云的间隔有没有大于映射间隔
-        if(laser_cloud_frame_number % 2 == 0)           //过滤一半点云
+        // if(laser_cloud_frame_number % 4 == 0)           //过滤点云
         {
             // std::cout << "xwl enter deal function" << std::endl;
             timeLastProcessing = timeLaserInfoCur;
@@ -1384,6 +1461,8 @@ public:
 
     void EloidperformSCLoopClosure()
     {
+        //获取真实的帧id
+        
         std::vector<int> detectResult = elmanager.DetectLoopClosureID(laser_cloud_frame_number);
 
         //候选id与真值对比
@@ -1409,15 +1488,17 @@ public:
                 if(detectresult_it <= (loop_true_id + 20) && detectresult_it >= (loop_true_id - 20))  //满足在20帧内？
                 {
                     loop_true = 1;
+                    break;
                 }
             }
             if(loop_enable && loop_true)
                 loop_true_num++;
         }
 
-        if(laser_cloud_frame_number == 4540)
+        if(gt_frame_index == 800)       //因为bag包内只有801帧，所以先设置为800
         { 
             cout << "loop true num: " << loop_true_num << endl;
+            cout << "input loop true num: " << loop_num << endl;
             cout << "can id current ratio: " << loop_true_num / loop_num << endl;
         }
 
@@ -1624,8 +1705,7 @@ public:
 
         pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);                                //复制点云
-        elmanager.MakeEllipsoidDescriptor(*thisRawCloudKeyFrame, laser_cloud_frame_number);                                   //使用点云进行描述符制作
-        // ndManager.context_origin_index.push_back(laser_cloud_frame_number);                      //保存原始点云帧序号        
+        elmanager.MakeInquiryEllipsoidDescriptor(*thisRawCloudKeyFrame, laser_cloud_frame_number);                                   //使用点云进行描述符制作       
 
     }
 
@@ -1691,7 +1771,13 @@ int main(int argc, char** argv)
 
     mapOptimization MO;
 
-    MO.testcode();
+    // MO.testcode();
+
+    //建立数据库
+    MO.MakeMapFeatureBase();
+
+    //建立真值话题包
+    // MO.GetGroundtrueFrame();
 
     ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     
