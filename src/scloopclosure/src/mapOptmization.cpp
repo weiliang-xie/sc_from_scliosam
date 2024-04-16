@@ -880,7 +880,7 @@ public:
         //写入csv文件
         File.open(data_file_name, ios::out);
         // 写入标题行
-        File << "name_1" << ',' << "name_2" << endl;
+        File << name_1 << ',' << name_2 << endl;
 
         for(auto data = data_queue.begin(); data != data_queue.end(); ++data)
         {
@@ -969,9 +969,13 @@ public:
         cout << "finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
 
         //体素分割效果测试数据保存
+        string error_file1 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_num.csv";
+        savedata(error_file1, "segnum", "orinum", elmanager.frame_seg_ori_num);
 
-        string error_file = savePCDDirectory + "ND/others/nd_kitti_" + "00" + "_segment_perform_pr.csv";
-        savedata(error_file, "presession", "recall", elmanager.frame_seg_presession_recall);
+        string error_file2 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_little_num.csv";
+        savedata(error_file2, "seg_little_num", "ori_little_num", elmanager.frame_seg_ori_littlevoxel_num);
+        string error_file3 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_valid_num.csv";
+        savedata(error_file3, "seg_valid_num", "ori_valid_num", elmanager.frame_seg_ori_validvoxel_num);
     }
 
     //提取真值点云帧
@@ -1463,7 +1467,8 @@ public:
     {
         //获取真实的帧id
         
-        std::vector<int> detectResult = elmanager.DetectLoopClosureID(laser_cloud_frame_number);
+        // std::vector<int> detectResult = elmanager.DetectLoopClosureID(laser_cloud_frame_number);
+        std::vector<int> detectResult = elmanager.GetCandidatesFrameID(laser_cloud_frame_number);
 
         //候选id与真值对比
         static double loop_true_num = 0;

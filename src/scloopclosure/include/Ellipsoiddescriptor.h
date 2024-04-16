@@ -46,17 +46,45 @@ using SCPointType = pcl::PointXYZI; // using xyz only. but a user can exchange t
 using KeyMat = std::vector<std::vector<float> >;
 using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
+#define CUSTOM_HASH_ENABLE 1    //测试用 开启自定义hash
+
+//哈希表键值类
+struct HashKey{
+    int mode;
+    int cloud_exit;
+    int mean_qf;    //质心的二次型
+    int mean_z;
+};
+
+struct HashKeyEqual{
+    bool operator()(const HashKey& lhs, const HashKey& rhs) const
+    {
+        // return lhs.mode == rhs.mode && lhs.cloud_exit == rhs.cloud_exit && lhs.mean_qf == rhs.mean_qf;
+        // return lhs.mode == rhs.mode && lhs.cloud_exit == rhs.cloud_exit && lhs.mean_z == rhs.mean_z;
+        // return lhs.mode == rhs.mode && lhs.mean_qf == rhs.mean_qf;
+        return lhs.mean_qf == rhs.mean_qf;
+    }
+};
+struct GetHashKey{
+    std::size_t operator()(const HashKey& k) const
+    {
+        // return hash<int>()(k.cloud_exit) ^ hash<int>()(k.mean_qf) ^ hash<int>()(k.mode);
+        // return hash<int>()(k.cloud_exit) ^ hash<int>()(k.mode) ^ hash<int>()(k.mean_z);
+        // return hash<int>()(k.mode) ^ hash<int>()(k.mean_qf);
+        return hash<int>()(k.mean_qf);
+    }
+};
+
 
 class EllipsoidLocalization : public BaseGlobalLocalization //全局算法基类
 {
 public:
     std::vector<Frame_Ellipsoid> database_frame_eloid;                   //数据库存储的椭球模型
     std::vector<Frame_Ellipsoid> cur_frame_eloid;                        //存储的查询帧椭球模型
-
+    
+//hash
     std::vector<std::vector<int> > database_frame_eloid_key;             //数据库中各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
     std::vector<std::vector<int> > cur_frame_eloid_key;                  //查询帧各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
-
-
 
     std::unordered_map<int, vector<int> > eloid_eigen_map;              //椭球特征值的hash
 
@@ -67,5 +95,23 @@ public:
     vector<int> GetHashFrameID(int key);
 
     std::vector<int> DetectLoopClosureID(int frame_id);
+    std::pair<int, float> Localization(std::vector<int> can_id);
 
-};
+//自定义hash
+    std::unordered_map<HashKey, vector<int>, GetHashKey, HashKeyEqual> custom_frame_hash;
+    std::vector<std::vector<HashKey> > database_custom_frame_eloid_key; 
+    std::vector<std::vector<HashKey> > cur_custom_frame_eloid_key;
+    HashKey GetEloidEigenKeyCustom(Ellipsoid eloid);
+    vector<int> GetHashFrameIDCustom(HashKey key);
+
+//kd树（sc改版）
+    KeyMat database_vertical_invkeys_mat_;                //数据帧垂直方向上的键值集合
+    KeyMat cur_vertical_invkeys_mat_;                     //查询帧垂直方向上的键值集合
+    KeyMat vertical_invkeys_to_search_;
+    std::unique_ptr<InvKeyTree> verticalkey_tree_;
+    std::vector<int> database_true_frame_id;                //储存数据库真实id，用于kd树后的id对应匹配
+
+
+    std::vector<int> GetCandidatesFrameID(int frame_id);
+
+};  

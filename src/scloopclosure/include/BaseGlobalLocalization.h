@@ -24,6 +24,7 @@
 
 #include "nanoflann.hpp"
 #include "KDTreeVectorOfVectorsAdaptor.h"
+// #include "utility.h"
 
 #include "tictoc.h"
 
@@ -49,6 +50,7 @@ class Ellipsoid{
 public:
     Ellipsoid(){
         center << 0,0,0;
+        max_z_point << 0,0,0;
         axis.resize(3,3);
         cov.resize(3,3);
         axis = Matrix3d::Zero();
@@ -69,6 +71,7 @@ public:
     Eigen::Matrix3d cov;                //协方差
     int mode;                           //椭球类型 -1: 无效 1：线性 2：平面型 3：立体型
     uint num_exit;                      //测试项 各个高度是否存在点云 存在：对应二进制位 == 1 不存在：对应二进制 == 0 范围0~2^9
+    Eigen::Vector3d max_z_point;        //最大高度点
 
     std::pair<int, int> voxel_index;    //体素索引，从0开始，first是x方向，second是y方向
     
@@ -109,17 +112,18 @@ public:
     std::vector<Ellipsoid> nonground_voxel_eloid;
 };
 
-#define SEGMENT_VOXEL_ENABLE 1                  //使能自适应分割，使用分割后的体素生成特征
+#define SEGMENT_VOXEL_ENABLE 0                  //使能自适应分割，使用分割后的体素生成特征
 
 class BaseGlobalLocalization    //全局算法基类 通用
 {
 public:                                                  
     //data
-    std::vector<Frame_Ellipsoid> frame_eloid;       //各帧特征模型
     std::vector<Frame_Voxeldata> frame_voxel;       //各帧体素信息
 
     //测试
-    std::vector<std::pair<double, double>> frame_seg_presession_recall;
+    std::vector<std::pair<double, double>> frame_seg_ori_num;
+    std::vector<std::pair<double, double>> frame_seg_ori_littlevoxel_num;
+    std::vector<std::pair<double, double>> frame_seg_ori_validvoxel_num;
 
     //lidar
     const double LIDAR_HEIGHT = 2.0;
@@ -139,13 +143,13 @@ public:
 
     const int NUM_CANDIDATES_HASH_ID = 20;                                                      //匹配的候选id数量
 
-    const int MIN_VAILD_VOXEL_POINT_NUM = 20;                                                   //有效体素的最小点云数量
+    const int MIN_VAILD_VOXEL_POINT_NUM = 50;                                                   //有效体素的最小点云数量
 
     //自适应划分
     const double DIVIDE_MIN_PROJECT_DISTANCE_FROM = 1;                                          //满足分割要求的两点最小映射距离
-    const double VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY = 0.05;                              //有效的分割点需要满足的距离边界的阈值要求
-    const double MAX_DIVIDE_LINE_BOUNDARY_DISTANCE = 0.01;                                      //用于判断分割线附近点云存在情况的最大范围距离
-    const int DIVIDE_LINE_BOUNDARY_MAX_NUM = 50;                                                //满足分割要求的分割线附近范围内最多允许存在的点云数量
+    const double VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY = 0.1;                              //有效的分割点需要满足的距离边界的阈值要求
+    const double MAX_DIVIDE_LINE_BOUNDARY_DISTANCE = 0.08;                                      //用于判断分割线附近点云存在情况的最大范围距离
+    const int DIVIDE_LINE_BOUNDARY_MAX_NUM = 10;                                                //满足分割要求的分割线附近范围内最多允许存在的点云数量
 
     //建立描述符特征
     void DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cloud);
@@ -165,5 +169,10 @@ public:
     std::vector<VoxelData> subdivision(Eigen::Vector3d seg_lidar_point, std::vector<Eigen::Vector3d> cur_leaf_point, Eigen::Vector3d cur_leaf_coordinate, Eigen::Vector3d cur_leaf_length);
     std::vector<VoxelData> subdivision_1(bool seg_x, bool seg_y, bool seg_z, Eigen::Vector3d seg_lidar_point, std::vector<Eigen::Vector3d> cur_leaf_point, Eigen::Vector3d cur_leaf_coordinate, Eigen::Vector3d cur_leaf_length);
     std::vector<VoxelData> subdivision_2(bool seg_x, bool seg_y, bool seg_z, Eigen::Vector3d seg_lidar_point, std::vector<Eigen::Vector3d> cur_leaf_point, Eigen::Vector3d cur_leaf_coordinate,Eigen::Vector3d cur_leaf_length);
-    
+
+    //kd树描述符（sc改版）
+    std::vector<float> MakeAndSaveDescriptorAndKey(std::map<int, VoxelData> origin_voxel_, int frame_id);
+    Eigen::MatrixXd GetMatrixDescriptor(std::map<int, VoxelData> origin_voxel_);
+    Eigen::MatrixXd MakeVerticalKeyFromDescriptor( Eigen::MatrixXd &_desc );
+
 };

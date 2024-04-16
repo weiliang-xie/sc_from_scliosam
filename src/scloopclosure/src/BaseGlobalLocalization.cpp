@@ -1,5 +1,5 @@
 #include "BaseGlobalLocalization.h"
-
+#include "Scancontext.h"
 #include <cmath>
 #include <math.h>
 #include <iostream>
@@ -19,6 +19,7 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
 {
     Frame_Voxeldata voxel_data_;
     int num_pts_scan_down = _scan_cloud.points.size();
+    cout << "Divide Voxel   point num is: " << num_pts_scan_down << endl;
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -66,10 +67,59 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
 
     //自适应划分体素
     AdaptiveSegmentation(voxel_data_.origin_voxel_data);
-    cout << "Divide Voxel  cur frame origin voxel num: " << frame_voxel.back().origin_voxel_data.size() << endl;
-    cout << "Divide Voxel  cur frame segment voxel num: " << frame_voxel.back().seg_voxel_data.size() << endl;
+    // cout << "Divide Voxel  cur frame origin voxel num: " << frame_voxel.back().origin_voxel_data.size() << endl;
+    // cout << "Divide Voxel  cur frame segment voxel num: " << frame_voxel.back().seg_voxel_data.size() << endl;
     // cout << endl;
 
+    //自适应体素效果测试
+    double seg_voxel_num = 0;
+    double ori_voxel_num = 0;
+    double seg_little_voxel_num = 0;
+    double ori_little_voxel_num = 0;
+    double seg_valid_voxel_num = 0;
+    double ori_valid_voxel_num = 0;
+    for(auto seg_frame_it : frame_voxel.back().seg_voxel_data)
+    {
+        if(seg_frame_it.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM * 2)
+        {
+            Ellipsoid seg_eloid;
+            std::pair<Eigen::MatrixXd, Eigen::MatrixXd> voxel_mean_cov = GetCovarMatrix(seg_frame_it.point_cloud);
+            std::pair<Eigen::Vector3d,Eigen::Matrix3d> voxel_eigen_ = GetEigenvalues(voxel_mean_cov.second); 
+            Eigen::Vector3d center_ = voxel_mean_cov.first.row(0);
+            if(TestClouDistrubutionVisualization(seg_frame_it.point_cloud, voxel_eigen_.second, center_))
+                seg_voxel_num++;
+        }
+        else if(seg_frame_it.point_cloud.size() < MIN_VAILD_VOXEL_POINT_NUM){
+            seg_little_voxel_num++;
+        }
+        if(seg_frame_it.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM)
+            seg_valid_voxel_num++;
+    }
+
+    for(auto ori_frame_it : frame_voxel.back().origin_voxel_data)
+    {
+        if(ori_frame_it.second.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM * 2)
+        {
+            Ellipsoid seg_eloid;
+            std::pair<Eigen::MatrixXd, Eigen::MatrixXd> voxel_mean_cov = GetCovarMatrix(ori_frame_it.second.point_cloud);
+            std::pair<Eigen::Vector3d,Eigen::Matrix3d> voxel_eigen_ = GetEigenvalues(voxel_mean_cov.second); 
+            Eigen::Vector3d center_ = voxel_mean_cov.first.row(0);
+            if(TestClouDistrubutionVisualization(ori_frame_it.second.point_cloud, voxel_eigen_.second, center_))
+                ori_voxel_num++;
+        }
+        else if(ori_frame_it.second.point_cloud.size() < MIN_VAILD_VOXEL_POINT_NUM){
+            ori_little_voxel_num++;
+        }
+        if(ori_frame_it.second.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM)
+            ori_valid_voxel_num++;
+    }
+    // cout << "Divide Voxel  sgement voxel num: " << seg_voxel_num << " origin voxel num: " << ori_voxel_num << endl;
+    std::pair<double, double> num_ = {seg_voxel_num,ori_voxel_num};
+    std::pair<double, double> little_num_ = {seg_little_voxel_num,ori_little_voxel_num};
+    std::pair<double, double> valid_num_ = {seg_valid_voxel_num,ori_valid_voxel_num};
+    frame_seg_ori_littlevoxel_num.push_back(little_num_);
+    frame_seg_ori_validvoxel_num.push_back(valid_num_);
+    frame_seg_ori_num.push_back(num_);
 }
 
 //构建椭球模型 输入划分好体素的点云
@@ -105,7 +155,7 @@ Frame_Ellipsoid BaseGlobalLocalization::BulidingEllipsoidModel(void)
             eloid.eloid_vaild = IsEllipsoidVaild(eloid);
             eloid.mode = ClassifyEllipsoid(eloid);
 
-            //求解高度方向上的点云存在二值化情况 num_exit
+            //求解高度方向上的点云存在二值化情况 num_exit max_z_point
             for(auto point_it : point_)
             {
                 int bit_shift = 0;
@@ -116,6 +166,10 @@ Frame_Ellipsoid BaseGlobalLocalization::BulidingEllipsoidModel(void)
                     // cout << bit_shift << ",";
                     eloid.num_exit |=  1 << bit_shift; 
                 }
+                
+                //max_z_point
+                if(point_it[2] > eloid.max_z_point[2])
+                    eloid.max_z_point = point_it;
             }
             // cout << endl;
             //椭球是否有效
@@ -129,7 +183,6 @@ Frame_Ellipsoid BaseGlobalLocalization::BulidingEllipsoidModel(void)
             }
         }
     }
-    // frame_eloid.push_back(_frame_eloid);
     return _frame_eloid;
 }
 
@@ -244,6 +297,90 @@ std::pair<Eigen::Vector3d,Eigen::Matrix3d> BaseGlobalLocalization::GetEigenvalue
     return result;
 }
 
+/*-------------------------SC改版描述符部分-------------------------*/
+
+std::vector<float> BaseGlobalLocalization::MakeAndSaveDescriptorAndKey(std::map<int, VoxelData> origin_voxel_, int frame_id)
+{
+    Eigen::MatrixXd descriptor = GetMatrixDescriptor(origin_voxel_);
+    Eigen::MatrixXd ver_key = MakeVerticalKeyFromDescriptor(descriptor);
+    std::vector<float> vertical_invkey_vec = eig2stdvec(ver_key);
+
+    // cout << "Make Descriptor   descriptor: " << descriptor << endl;
+
+    return vertical_invkey_vec;
+}
+
+Eigen::MatrixXd BaseGlobalLocalization::GetMatrixDescriptor(std::map<int, VoxelData> origin_voxel_)
+{
+    cout << "Make Descriptor   origin voxel num: " << origin_voxel_.size() << endl;
+    const int NO_POINT = -1000;
+    MatrixXd desc = NO_POINT * MatrixXd::Ones(VOXEL_NUM_VERTICAL, VOXEL_NUM_HORIZONTAL);  //创建空（无点云）的SC矩阵
+
+    for(auto voxel_it : origin_voxel_)
+    {
+        int horizontal, vertical;
+        horizontal =  voxel_it.first / VOXEL_NUM_VERTICAL;
+        vertical = voxel_it.first % VOXEL_NUM_VERTICAL;
+        //均值高度 0.87
+        double mean_z = 0;
+        for(auto point_it : voxel_it.second.point_cloud)
+        {
+            mean_z += point_it[2];
+        }        
+        mean_z /= voxel_it.second.point_cloud.size();
+        desc(horizontal,vertical) = mean_z;
+
+        //最大高度 0.87
+        // double max_z = -1000;
+        // for(auto point_it : voxel_it.second.point_cloud)
+        // {
+        //     if(point_it[2] > max_z)
+        //         max_z = point_it[2];
+        // }        
+        // desc(horizontal,vertical) = max_z;  //这里方向对换
+
+        //点云存在二值 0.87
+        // int num_exit = 0;
+        // for(auto point_it : voxel_it.second.point_cloud)
+        // {
+        //     int bit_shift = 0;
+        //     bit_shift = floor(point_it[2] / 0.5) > 8 ? 8 : (floor(point_it[2] / 0.5) < 0 ? 0 : floor(point_it[2] / 0.5));
+        //     // cout << point_it[2] << ",";
+        //     if((num_exit & (1 << bit_shift)) == 0)
+        //     {
+        //         // cout << bit_shift << ",";
+        //         num_exit |=  1 << bit_shift; 
+        //     }
+        // }
+        // desc(horizontal,vertical) = num_exit;  //这里方向对换
+
+    }
+
+    //将无点的网格描述值 = 0
+    for ( int row_idx = 0; row_idx < desc.rows(); row_idx++ )
+        for ( int col_idx = 0; col_idx < desc.cols(); col_idx++ )
+            if( desc(row_idx, col_idx) == NO_POINT )
+                desc(row_idx, col_idx) = 0;
+    
+    // cout << "Make Descriptor   finish make descriptor" << endl;
+    return desc;
+}
+
+//制作vertical key
+Eigen::MatrixXd BaseGlobalLocalization::MakeVerticalKeyFromDescriptor( Eigen::MatrixXd &_desc )
+{
+    /* 
+     * summary: rowwise mean vector
+    */
+    Eigen::MatrixXd invariant_key(_desc.rows(), 1);
+    for ( int row_idx = 0; row_idx < _desc.rows(); row_idx++ )
+    {
+        Eigen::MatrixXd curr_row = _desc.row(row_idx);
+        invariant_key(row_idx, 0) = curr_row.mean();    //求解每行的平均值
+    }
+
+    return invariant_key;
+} 
 
 /*-------------------------自适应划分体素部分-------------------------*/
 
@@ -317,27 +454,6 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
                 // cout << "Adaptive Segment  voxel mode is: stereoscopic" << endl;
                 seg_state = false;
             }
-
-            //体素分割效果测试
-            int gt_seg_state = 0;
-            Eigen::Vector3d center_ = voxel_mean_cov.first.row(0);
-            if(voxel_eloid.mode != 3)
-            {
-                gt_seg_state = TestClouDistrubutionVisualization(origin_voxel_it.second.point_cloud, voxel_eigen_.second, center_);
-                if(gt_seg_state == 1)
-                {
-                    all_voxel_gt_seg_test++;
-                    if(seg_state == true)
-                    {
-                        tp++;
-                    }
-                }
-
-                if(seg_state == true)
-                {
-                    all_voxel_pre_test++;
-                }   
-            }
         }else{
             // cout << "Adaptive Segment  voxel point num is not enough" << endl;
             seg_state = false;
@@ -358,14 +474,6 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
         }
 
     }
-
-    //体素分割效果打印
-    // cout << "Adaptive Segment           tp is: " << tp << "  pre_positive is: " << all_voxel_pre_test << "  gt_positive is: " << all_voxel_gt_seg_test << endl;
-    double presession = tp / all_voxel_pre_test;
-    double recall = tp / all_voxel_gt_seg_test;
-    // cout << "Adaptive Segment           segment presession is: " << presession << "  recall is: " << recall << endl;
-    std:;pair<double,double> prdata = {presession, recall};
-    frame_seg_presession_recall.push_back(prdata);
 }
 
 //自适应体素划分 以单个体素为单位 不在z方向上划分
@@ -821,7 +929,7 @@ BaseGlobalLocalization::subdivision(Eigen::Vector3d seg_lidar_point, std::vector
 
 
 
-//体素点云分布情况可视化 概率分布函数
+//体素点云分布情况可视化 概率分布函数 需要分割返回 1 无需分割返回 0
 int TestClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::Matrix3d axis_all, Eigen::Vector3d center)
 {
     Eigen::Vector3d max_axis = axis_all.col(0);
@@ -871,7 +979,7 @@ int TestClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, E
             }
         }
     }
-    if(max_zero_num * uint > 0.6)
+    if(max_zero_num * uint > 1)
         return 1;
     else
         return 0;
