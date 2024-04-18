@@ -229,64 +229,75 @@ MatrixXd SCManager::makeSectorkeyFromScancontext( Eigen::MatrixXd &_desc )
 
 const Eigen::MatrixXd& SCManager::getConstRefRecentSCD(void)
 {
-    return polarcontexts_.back();
+    return database_polarcontexts_.back();
 }
 
 
-void SCManager::makeAndSaveScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down )
+void SCManager::makeAndSaveDatabaseScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id)
 {
     Eigen::MatrixXd sc = makeScancontext(_scan_down); // v1     //制作SC描述矩阵
     Eigen::MatrixXd ringkey = makeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
     Eigen::MatrixXd sectorkey = makeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
-    polarcontexts_.push_back( sc );     //保存描述矩阵
+    database_polarcontexts_.push_back( sc );     //保存描述矩阵
     polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
     polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
-    polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值
+    database_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值
+    database_gt_id.push_back(frame_id);
 
-    // cout <<polarcontext_vkeys_.size() << endl;
+    // cout << "[SC]  Make Save Database Scancontext Key   the key num: " << database_polarcontext_invkeys_mat_.size() << endl;
 
-} // SCManager::makeAndSaveScancontextAndKeys
+} // SCManager::makeAndSaveDatabaseScancontextAndKeys
+
+void SCManager::makeAndSaveInquiryScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id)
+{
+    Eigen::MatrixXd sc = makeScancontext(_scan_down); // v1     //制作SC描述矩阵
+    Eigen::MatrixXd ringkey = makeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
+    Eigen::MatrixXd sectorkey = makeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
+    std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
+
+    inquiry_polarcontexts_.push_back( sc );     //保存描述矩阵
+    inquiry_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值
+    inquiry_gt_id.push_back(frame_id);
+
+    // cout << "[SC]  Make Save Inquiry Scancontext Key   the key num: " << inquiry_polarcontext_invkeys_mat_.size() << endl;
+
+} // SCManager::makeAndSaveDatabaseScancontextAndKeys
 
 
 std::pair<int, float> SCManager::detectLoopClosureID ( void )
 {
     int loop_id { -1 }; // init with -1, -1 means no loop (== LeGO-LOAM's variable "closestHistoryFrameID")
 
-    // cout << "enter descriptor detect" << endl;
-
-    // auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    // auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
-
     /* 
      * step 1: candidates from ringkey tree_
      */
-    if( (int)polarcontext_invkeys_mat_.size() < NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
+    if( (int)database_polarcontext_invkeys_mat_.size() < NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
     {
         std::pair<int, float> result {loop_id, 0.0};
-        // cout << "descriptor number is not enough" << endl;
+        // cout << "[SC]  descriptor number is not enough" << endl;
         return result; // Early return 
     }
 
-    auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
+    auto curr_key = inquiry_polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
+    auto curr_desc = inquiry_polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
 
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
-    if( tree_making_period_conter % TREE_MAKING_PERIOD_ == 0) // to save computation cost
+    if( tree_making_period_conter == 0) // to save computation cost
     {
         TicToc t_tree_construction;
 
         polarcontext_invkeys_to_search_.clear();
-        polarcontext_invkeys_to_search_.assign( polarcontext_invkeys_mat_.begin(), polarcontext_invkeys_mat_.end() - NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
+        polarcontext_invkeys_to_search_.assign( database_polarcontext_invkeys_mat_.begin(), database_polarcontext_invkeys_mat_.end() - NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
 
         //复位polarcontext_tree_指针，并开辟一段动态内存用于存放 同时构造出来的KDTreeVectorOfVectorsAdaptor类
         polarcontext_tree_.reset(); 
         polarcontext_tree_ = std::make_unique<InvKeyTree>(PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
+        tree_making_period_conter = tree_making_period_conter + 1;
         t_tree_construction.toc("Tree construction");
     }
-    tree_making_period_conter = tree_making_period_conter + 1;
         
     double min_dist = 10000000; // init with somthing large
     int nn_align = 0;
@@ -308,7 +319,7 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     TicToc t_calc_dist;   
     for ( int candidate_iter_idx = 0; candidate_iter_idx < NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
-        MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
+        MatrixXd polarcontext_candidate = database_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
         std::pair<double, int> sc_dist_result = distanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
         
         double candidate_dist = sc_dist_result.first;
@@ -325,26 +336,26 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     t_calc_dist.toc("Distance calc");
 
     //储存回环帧的id和相似度距离
-    std::pair<int,float> data{(polarcontexts_.size()-1),min_dist};
+    std::pair<int,float> data{(inquiry_polarcontexts_.size()-1),min_dist};
     loopclosure_id_and_dist.push_back(data);
+    loop_id = nn_idx; 
 
     /* 
      * loop threshold check
      */
-    if( min_dist < SC_DIST_THRES )  //是否达到回环阈值判断
+    // if( min_dist < SC_DIST_THRES )  //是否达到回环阈值判断
     {
-        loop_id = nn_idx; 
         
         std::cout.precision(3); 
-        cout << "[SC]  [Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
+        cout << "[SC]  Nearest distance: " << min_dist << " btn " << inquiry_gt_id.back() << " and " << database_gt_id[nn_idx] << "." << endl;
         // cout << "  [Loop found] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
     }
-    else
-    {
-        std::cout.precision(3); 
-        cout << "[SC]  [Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        // cout << "  [Not loop] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
-    }
+    // // else
+    // {
+    //     std::cout.precision(3); 
+    //     cout << "[SC]  [Not loop] Nearest distance: " << min_dist << " btn " << inquiry_gt_id.back() << " and " << database_gt_id[nn_idx] << "." << endl;
+    //     // cout << "  [Not loop] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
+    // }
 
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * PC_UNIT_SECTORANGLE);

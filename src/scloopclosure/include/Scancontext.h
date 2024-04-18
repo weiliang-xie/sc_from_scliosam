@@ -27,6 +27,8 @@
 
 #include "tictoc.h"
 
+#include "BaseGlobalLocalization.h"
+
 using namespace Eigen;
 using namespace nanoflann;
 
@@ -71,7 +73,9 @@ public:
     std::pair<double, int> distanceBtnScanContext ( MatrixXd &_sc1, MatrixXd &_sc2 ); // "D" (eq 6) in the original paper (IROS 18)
 
     // User-side API
-    void makeAndSaveScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down );
+    void makeAndSaveDatabaseScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id);
+    void makeAndSaveInquiryScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id);
+
     std::pair<int, float> detectLoopClosureID( void ); // int: nearest node index, float: relative yaw  
 
     // for ltmapper 
@@ -103,16 +107,23 @@ public:
 
     // data 
     std::vector<double> polarcontexts_timestamp_; // optional.
-    std::vector<Eigen::MatrixXd> polarcontexts_;
+    std::vector<Eigen::MatrixXd> database_polarcontexts_;
+    std::vector<Eigen::MatrixXd> inquiry_polarcontexts_;
     std::vector<Eigen::MatrixXd> polarcontext_invkeys_;
     std::vector<Eigen::MatrixXd> polarcontext_vkeys_;
     std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
     std::vector<std::pair<int,double>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
 
-    KeyMat polarcontext_invkeys_mat_;   //float的容器的容器
+    KeyMat database_polarcontext_invkeys_mat_;   //float的容器的容器
+    KeyMat inquiry_polarcontext_invkeys_mat_;   //float的容器的容器
     KeyMat polarcontext_invkeys_to_search_;
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
 
+    std::vector<int> inquiry_gt_id;                                        //database的对应真值id
+    std::vector<int> database_gt_id;                                        //database的对应真值id
+
+//evaluate
+    Evaluate evaluate_data;
 }; // SCManager
 
 // } // namespace SC2

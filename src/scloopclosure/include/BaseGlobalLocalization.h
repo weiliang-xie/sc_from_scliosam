@@ -43,7 +43,18 @@ using SCPointType = pcl::PointXYZI; // using xyz only. but a user can exchange t
 using KeyMat = std::vector<std::vector<float> >;
 using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
+//评价数据收集
+class Evaluate
+{
+public:
+    //loop id 准确率
+    std::vector<int> loop_id;
+    std::vector<int> inquiry_id;
 
+    Evaluate(){
+
+    }
+};
 
 //椭球模型与体素特征
 class Ellipsoid{
@@ -138,10 +149,11 @@ public:
 
     //threshold
     const int GROUND_HEIGHT = 0.4;                                                              //0.4为暂取值，仍待验证
-    const int NUM_EXCLUDE_FIRST = 30;                                                           //前x个描述符不进行回环检测
+    const int NUM_EXCLUDE_FIRST = 30;                                                           //满足检索要求的数据库的最小数据帧数量
     const int NUM_EXCLUDE_RECENT = 100;                                                          //排除相邻的x帧
 
-    const int NUM_CANDIDATES_HASH_ID = 20;                                                      //匹配的候选id数量
+    const int NUM_CANDIDATES_HASH_ID = 200;                                                         //hash匹配的候选id数量
+    const int NUM_CANDIDATES_KD_ID = 20;                                                           //kd tree匹配的候选id数量
 
     const int MIN_VAILD_VOXEL_POINT_NUM = 50;                                                   //有效体素的最小点云数量
 

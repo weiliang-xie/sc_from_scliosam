@@ -19,7 +19,7 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
 {
     Frame_Voxeldata voxel_data_;
     int num_pts_scan_down = _scan_cloud.points.size();
-    cout << "Divide Voxel   point num is: " << num_pts_scan_down << endl;
+    // cout << "[EL]  Divide Voxel   point num is: " << num_pts_scan_down << endl;
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -38,11 +38,11 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
         if(pt.z > voxel_data_.max_point_z)
             voxel_data_.max_point_z = pt.z;
         
-        // cout << "computer bin index" << endl;
+        // cout << "[EL]  computer bin index" << endl;
         horizontal_idx = floor(double((pt.x + 80.0) / VOXEL_UNIT_HORIZANTAL));
         vertical_idx = floor(double((pt.y + 80.0) / VOXEL_UNIT_VERTICAL));
         
-        // cout << "printf ring index: " << ring_idx << " sector index: " << sector_idx << endl;
+        // cout << "[EL]  printf ring index: " << ring_idx << " sector index: " << sector_idx << endl;
         Eigen::Vector3d point_data = {pt.x,pt.y,pt.z};
         voxel_data_.origin_voxel_data[horizontal_idx * VOXEL_NUM_VERTICAL + vertical_idx].point_cloud.push_back(point_data);
     }
@@ -57,18 +57,18 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
         voxel_it.second.coordinate[0] = MAX_RANGE * (-1) + x_index * VOXEL_UNIT_HORIZANTAL;
         voxel_it.second.coordinate[1] = MAX_RANGE * (-1) + y_index * VOXEL_UNIT_VERTICAL;
         voxel_it.second.coordinate[2] = voxel_data_.min_point_z;
-        // cout << "Divide Voxel x index: " << x_index << " y index: " << y_index << endl;
+        // cout << "[EL]  Divide Voxel x index: " << x_index << " y index: " << y_index << endl;
     }
 
-    // cout << "Divide Voxel  voxel num: " << voxel_data_.origin_voxel_data.size() << endl;
-    // cout << "Divide Voxel  max z: " << voxel_data_.max_point_z << " min z: " << voxel_data_.min_point_z << endl;
+    // cout << "[EL]  Divide Voxel  voxel num: " << voxel_data_.origin_voxel_data.size() << endl;
+    // cout << "[EL]  Divide Voxel  max z: " << voxel_data_.max_point_z << " min z: " << voxel_data_.min_point_z << endl;
     frame_voxel.push_back(voxel_data_);
 
 
     //自适应划分体素
     AdaptiveSegmentation(voxel_data_.origin_voxel_data);
-    // cout << "Divide Voxel  cur frame origin voxel num: " << frame_voxel.back().origin_voxel_data.size() << endl;
-    // cout << "Divide Voxel  cur frame segment voxel num: " << frame_voxel.back().seg_voxel_data.size() << endl;
+    // cout << "[EL]  Divide Voxel  cur frame origin voxel num: " << frame_voxel.back().origin_voxel_data.size() << endl;
+    // cout << "[EL]  Divide Voxel  cur frame segment voxel num: " << frame_voxel.back().seg_voxel_data.size() << endl;
     // cout << endl;
 
     //自适应体素效果测试
@@ -113,7 +113,7 @@ void BaseGlobalLocalization::DivideVoxel(pcl::PointCloud<SCPointType> & _scan_cl
         if(ori_frame_it.second.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM)
             ori_valid_voxel_num++;
     }
-    // cout << "Divide Voxel  sgement voxel num: " << seg_voxel_num << " origin voxel num: " << ori_voxel_num << endl;
+    // cout << "[EL]  Divide Voxel  sgement voxel num: " << seg_voxel_num << " origin voxel num: " << ori_voxel_num << endl;
     std::pair<double, double> num_ = {seg_voxel_num,ori_voxel_num};
     std::pair<double, double> little_num_ = {seg_little_voxel_num,ori_little_voxel_num};
     std::pair<double, double> valid_num_ = {seg_valid_voxel_num,ori_valid_voxel_num};
@@ -217,7 +217,7 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> BaseGlobalLocalization::GetCovarMatr
 	const int rows = bin_piont.size();
     const int cols = bin_piont[0].size();
 
-    // cout << "rows: " << rows << " cols: " << cols << endl;
+    // cout << "[EL]  rows: " << rows << " cols: " << cols << endl;
  
 	std::vector<double> vec_;
 	for (int i = 0; i < rows; ++i) {
@@ -234,7 +234,7 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> BaseGlobalLocalization::GetCovarMatr
 	const int nsamples = rows;
  
 	Eigen::MatrixXd mean = m.colwise().mean();      //求样本均值
-	// std::cout << "print mean: " << std::endl << mean << std::endl;
+	// std::cout << "[EL]  print mean: " << std::endl << mean << std::endl;
  
 	Eigen::MatrixXd tmp(rows, cols);
 	for (int y = 0; y < rows; ++y) {
@@ -242,10 +242,10 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> BaseGlobalLocalization::GetCovarMatr
 			tmp(y, x) = m(y, x) - mean(0, x);
 		}
 	}
-	//std::cout << "tmp: " << std::endl << tmp << std::endl;
+	//std::cout << "[EL]  tmp: " << std::endl << tmp << std::endl;
  
 	Eigen::MatrixXd covar = (tmp.adjoint() * tmp) / float(nsamples - 1);    //求协方差矩阵
-	// std::cout << "print covariance matrix: " << std::endl << covar << std::endl << std::endl;
+	// std::cout << "[EL]  print covariance matrix: " << std::endl << covar << std::endl << std::endl;
     std::pair<Eigen::MatrixXd, Eigen::MatrixXd> result = {mean,covar};
  
 	return result;
@@ -254,14 +254,14 @@ std::pair<Eigen::MatrixXd, Eigen::MatrixXd> BaseGlobalLocalization::GetCovarMatr
 //特征值分解 返回值为降序 输入 协方差  输出 特征值-特征向量对
 std::pair<Eigen::Vector3d,Eigen::Matrix3d> BaseGlobalLocalization::GetEigenvalues(Eigen::MatrixXd bin_cov)
 {
-    // cout << "Here is a 3x3 matrix, bin_cov:" << endl << bin_cov << endl << endl;
+    // cout << "[EL]  Here is a 3x3 matrix, bin_cov:" << endl << bin_cov << endl << endl;
     EigenSolver<Matrix3d> es(bin_cov);
 	
 	Matrix3d D = es.pseudoEigenvalueMatrix();
 	Matrix3d V = es.pseudoEigenvectors();
-	// cout << "The pseudo-eigenvalue matrix D is:" << endl << D << endl;
-	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
-	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+	// cout << "[EL]  The pseudo-eigenvalue matrix D is:" << endl << D << endl;
+	// cout << "[EL]  The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "[EL]  Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
 
     //特征值 特征向量 排序
     for(int i = 0; i < D.cols(); i++)
@@ -283,13 +283,13 @@ std::pair<Eigen::Vector3d,Eigen::Matrix3d> BaseGlobalLocalization::GetEigenvalue
             }
         }
     }
-	// cout << "The pseudo-eigenvector matrix V is:" << endl << V << endl;
-	// cout << "Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
+	// cout << "[EL]  The pseudo-eigenvector matrix V is:" << endl << V << endl;
+	// cout << "[EL]  Finally, V * D * V^(-1) = " << endl << V * D * V.inverse() << endl;
 
     //特征值赋值到vector
     Eigen::Vector3d eigen_value;
     eigen_value << D(0,0),D(1,1),D(2,2);
-    // std::cout << "eigen value: " << eigen_value[0] << " " << eigen_value[1] << " " << eigen_value[2] << endl;
+    // std::cout << "[EL]  eigen value: " << eigen_value[0] << " " << eigen_value[1] << " " << eigen_value[2] << endl;
 
     //将特征值和特征向量用pair形式返回
     std::pair<Eigen::Vector3d,Eigen::Matrix3d> result = {eigen_value,V};
@@ -305,14 +305,14 @@ std::vector<float> BaseGlobalLocalization::MakeAndSaveDescriptorAndKey(std::map<
     Eigen::MatrixXd ver_key = MakeVerticalKeyFromDescriptor(descriptor);
     std::vector<float> vertical_invkey_vec = eig2stdvec(ver_key);
 
-    // cout << "Make Descriptor   descriptor: " << descriptor << endl;
+    // cout << "[EL]  Make Descriptor   descriptor: " << descriptor << endl;
 
     return vertical_invkey_vec;
 }
 
 Eigen::MatrixXd BaseGlobalLocalization::GetMatrixDescriptor(std::map<int, VoxelData> origin_voxel_)
 {
-    cout << "Make Descriptor   origin voxel num: " << origin_voxel_.size() << endl;
+    // cout << "[EL]  Make Descriptor   origin voxel num: " << origin_voxel_.size() << endl;
     const int NO_POINT = -1000;
     MatrixXd desc = NO_POINT * MatrixXd::Ones(VOXEL_NUM_VERTICAL, VOXEL_NUM_HORIZONTAL);  //创建空（无点云）的SC矩阵
 
@@ -362,7 +362,7 @@ Eigen::MatrixXd BaseGlobalLocalization::GetMatrixDescriptor(std::map<int, VoxelD
             if( desc(row_idx, col_idx) == NO_POINT )
                 desc(row_idx, col_idx) = 0;
     
-    // cout << "Make Descriptor   finish make descriptor" << endl;
+    // cout << "[EL]  Make Descriptor   finish make descriptor" << endl;
     return desc;
 }
 
@@ -395,7 +395,7 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
     {
         bool seg_state = true;
         std::vector<VoxelData> seg_voxel_;
-        // cout << "Adaptive Segment  enter judge segment voxel" << endl;
+        // cout << "[EL]  Adaptive Segment  enter judge segment voxel" << endl;
         if(origin_voxel_it.second.point_cloud.size() > MIN_VAILD_VOXEL_POINT_NUM * 2)
         {
             //获取特征向量 特征值 点云类型
@@ -416,7 +416,7 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
             //处理线性模型
             if(voxel_eloid.mode == 1)
             {
-                // cout << "Adaptive Segment  voxel mode is: line" << endl;
+                // cout << "[EL]  Adaptive Segment  voxel mode is: line" << endl;
                 seg_voxel_ = project_pt(cur_vector_0, origin_voxel_it.second, voxel_eloid.center, 
                                         origin_voxel_it.second.coordinate, origin_voxel_it.second.length);
                 // if(seg_voxel_.empty())
@@ -431,7 +431,7 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
 
             }else if(voxel_eloid.mode == 2)
             {
-                // cout << "Adaptive Segment  voxel mode is: place" << endl;
+                // cout << "[EL]  Adaptive Segment  voxel mode is: place" << endl;
                 seg_voxel_ = project_pt(cur_vector_0, origin_voxel_it.second, voxel_eloid.center, 
                                         origin_voxel_it.second.coordinate, origin_voxel_it.second.length);
                 if(seg_voxel_.empty())
@@ -451,22 +451,22 @@ void BaseGlobalLocalization::AdaptiveSegmentation(std::map<int, VoxelData> origi
 
             }else if(voxel_eloid.mode == 3)
             {
-                // cout << "Adaptive Segment  voxel mode is: stereoscopic" << endl;
+                // cout << "[EL]  Adaptive Segment  voxel mode is: stereoscopic" << endl;
                 seg_state = false;
             }
         }else{
-            // cout << "Adaptive Segment  voxel point num is not enough" << endl;
+            // cout << "[EL]  Adaptive Segment  voxel point num is not enough" << endl;
             seg_state = false;
         }
 
 
         if(seg_state == false)
         {
-            // cout << "Adaptive Segment  no segment voxel" << endl;
+            // cout << "[EL]  Adaptive Segment  no segment voxel" << endl;
             frame_voxel.back().seg_voxel_data.push_back(origin_voxel_it.second);
 
         }else{
-            // cout << "Adaptive Segment  successfully segment voxel" << endl;
+            // cout << "[EL]  Adaptive Segment  successfully segment voxel" << endl;
             for(auto seg_voxel_data_it : seg_voxel_)
             {
                 frame_voxel.back().seg_voxel_data.push_back(seg_voxel_data_it);
@@ -620,7 +620,7 @@ BaseGlobalLocalization::project_pt(Eigen::Matrix<double, 1, 3> cur_vector, Voxel
                 //这里再次判断一次 需要同时满足不在两个侧面边界
                 if (seg_lidar_point.x() - cur_leaf_coordinate.x() < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY || seg_lidar_point.x() - (cur_leaf_coordinate.x() + cur_leaf_length.x()) < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY) 
                 {
-                    // cout << "Project Point  only x   segment point boundary near" << endl;
+                    // cout << "[EL]  Project Point  only x   segment point boundary near" << endl;
                     continue;
                 }
                 // std::cout<<"segement in x direction"<<std::endl;
@@ -631,7 +631,7 @@ BaseGlobalLocalization::project_pt(Eigen::Matrix<double, 1, 3> cur_vector, Voxel
             {
                 if (seg_lidar_point.y() - cur_leaf_coordinate.y() < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY || seg_lidar_point.y() - (cur_leaf_coordinate.y() + cur_leaf_length.y()) < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY)
                 {
-                    // cout << "Project Point  only y   segment point boundary near" << endl;
+                    // cout << "[EL]  Project Point  only y   segment point boundary near" << endl;
                     continue;
                 }
                 // std::cout<<"segement in y direction"<<std::endl;
@@ -643,7 +643,7 @@ BaseGlobalLocalization::project_pt(Eigen::Matrix<double, 1, 3> cur_vector, Voxel
             // {
             //     if (seg_lidar_point.z() - cur_leaf_coordinate.z() < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY || seg_lidar_point.z() - (cur_leaf_coordinate.z() + cur_leaf_length.z()) < VALID_DIVIDE_POINT_DISTANCE_FROM_BOUNDARY)
             //     {
-            //         cout << "Project Point  only z   segment point boundary near" << endl;
+            //         cout << "[EL]  Project Point  only z   segment point boundary near" << endl;
             //         continue;
             //     }
             //     std::cout<<"segement in z direction"<<std::endl;
@@ -652,14 +652,14 @@ BaseGlobalLocalization::project_pt(Eigen::Matrix<double, 1, 3> cur_vector, Voxel
             // }
             else if (overlap_x >= DIVIDE_LINE_BOUNDARY_MAX_NUM && overlap_y >= DIVIDE_LINE_BOUNDARY_MAX_NUM && overlap_z >= DIVIDE_LINE_BOUNDARY_MAX_NUM)
             {
-                // cout << "Project Point  no segment point  segment line so much point nearly" << endl;
+                // cout << "[EL]  Project Point  no segment point  segment line so much point nearly" << endl;
                 return std::vector<VoxelData>();
             }
         }
         last_project_points = *ite1;
     }
     
-    // cout << "Project Point  no segment point  segment point boundary near" << endl;
+    // cout << "[EL]  Project Point  no segment point  segment point boundary near" << endl;
     return std::vector<VoxelData>();
 }
 
@@ -731,7 +731,7 @@ BaseGlobalLocalization::subdivision_1(bool seg_x, bool seg_y, bool seg_z, Eigen:
     seg_voxel_.push_back(voxel_data_0);
     seg_voxel_.push_back(voxel_data_1);
 
-    // cout << "Segment Voxel  finish divide 1 coordinate" << endl;
+    // cout << "[EL]  Segment Voxel  finish divide 1 coordinate" << endl;
 
     return seg_voxel_;
 
@@ -846,7 +846,7 @@ BaseGlobalLocalization::subdivision_2(bool seg_x, bool seg_y, bool seg_z, Eigen:
     seg_voxel_.push_back(voxel_data_2);
     seg_voxel_.push_back(voxel_data_3);
 
-    // cout << "Segment Voxel  finish divide 2 coordinate" << endl;
+    // cout << "[EL]  Segment Voxel  finish divide 2 coordinate" << endl;
 
     return seg_voxel_;
 
@@ -922,7 +922,7 @@ BaseGlobalLocalization::subdivision(Eigen::Vector3d seg_lidar_point, std::vector
     seg_voxel_.push_back(voxel_data_6);
     seg_voxel_.push_back(voxel_data_7);
 
-    // cout << "Segment Voxel  finish divide 3 coordinate" << endl;
+    // cout << "[EL]  Segment Voxel  finish divide 3 coordinate" << endl;
 
     return seg_voxel_;
 }

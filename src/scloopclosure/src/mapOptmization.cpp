@@ -962,20 +962,24 @@ public:
                 std::string frame_idx = padZeros(i);
                 pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
                 pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *_rawcloud); 
+                //eloid部分数据库制作
                 elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
+                //SC部分数据库制作
+                scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
+
             }
   
         }
-        cout << "finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
-
+        cout << "[ALL]  finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
+ 
         //体素分割效果测试数据保存
-        string error_file1 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_num.csv";
-        savedata(error_file1, "segnum", "orinum", elmanager.frame_seg_ori_num);
+        // string error_file1 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_num.csv";
+        // savedata(error_file1, "segnum", "orinum", elmanager.frame_seg_ori_num);
 
-        string error_file2 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_little_num.csv";
-        savedata(error_file2, "seg_little_num", "ori_little_num", elmanager.frame_seg_ori_littlevoxel_num);
-        string error_file3 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_valid_num.csv";
-        savedata(error_file3, "seg_valid_num", "ori_valid_num", elmanager.frame_seg_ori_validvoxel_num);
+        // string error_file2 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_little_num.csv";
+        // savedata(error_file2, "seg_little_num", "ori_little_num", elmanager.frame_seg_ori_littlevoxel_num);
+        // string error_file3 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_valid_num.csv";
+        // savedata(error_file3, "seg_valid_num", "ori_valid_num", elmanager.frame_seg_ori_validvoxel_num);
     }
 
     //提取真值点云帧
@@ -1045,7 +1049,7 @@ public:
             
             // downsampleCurrentScan();    //降采样处理
 
-            // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
+            SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
             // NDsaveKeyFramesAndFactor();     //制作ND描述符
 
@@ -1053,13 +1057,13 @@ public:
 
             SaveFrameEllipsoidDescriptor();      //制作eloid描述符
 
-            // performSCLoopClosure();      //求解SC回环状态
+            performSCLoopClosure();      //求解SC回环状态
 
             // NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 
-            EloidperformSCLoopClosure();           //求解eloid的回环状态
+            EloidperformLoopClosure();           //求解eloid的回环状态
 
             publishFrames();             //发布路径
 
@@ -1197,105 +1201,115 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
+        scManager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
+        scManager.evaluate_data.loop_id.push_back(scManager.database_gt_id[detectResult.first]);
+
+        if(gt_frame_index == 800)       //因为bag包内只有801帧，所以先设置为800
+        {
+            double precise = EvaluateLoopFramePrecise(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
+
+            cout << "[SC]  Scancontext Perform Loop Closure    id current ratio: " << precise << endl;
+        }
+
         // std::cout << "[SC] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
 
         //xwl 描述符匹配旋转位姿转换对比
 
 
-        // extract cloud
-        pcl::PointCloud<PointType>::Ptr cureKeyframeCloud(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointType>::Ptr prevKeyframeCloud(new pcl::PointCloud<PointType>());
-        // {
-            loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
-            loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
+        // // extract cloud
+        // pcl::PointCloud<PointType>::Ptr cureKeyframeCloud(new pcl::PointCloud<PointType>());
+        // pcl::PointCloud<PointType>::Ptr prevKeyframeCloud(new pcl::PointCloud<PointType>());
+        // // {
+        //     loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
+        //     loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
 
-            int base_key = 0;
-            loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, base_key); // giseop 
-            loopFindNearKeyframesWithRespectTo(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum, base_key); // giseop    //获取转换后的点云
+        //     int base_key = 0;
+        //     loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, base_key); // giseop 
+        //     loopFindNearKeyframesWithRespectTo(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum, base_key); // giseop    //获取转换后的点云
 
-            if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)    //? 这里判断点云内的点数量是否足够？
-                return;
-            if (pubHistoryKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅历史关键帧话题 getNumSubscribers返回是否有节点订阅
-                publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 点云坐标系
-        // }
+        //     if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)    //? 这里判断点云内的点数量是否足够？
+        //         return;
+        //     if (pubHistoryKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅历史关键帧话题 getNumSubscribers返回是否有节点订阅
+        //         publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 点云坐标系
+        // // }
 
 
         
 
-        // ICP Settings
-        static pcl::IterativeClosestPoint<PointType, PointType> icp;
-        icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
-        icp.setMaximumIterations(100);
-        icp.setTransformationEpsilon(1e-6);
-        icp.setEuclideanFitnessEpsilon(1e-6);
-        icp.setRANSACIterations(0);
+        // // ICP Settings
+        // static pcl::IterativeClosestPoint<PointType, PointType> icp;
+        // icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
+        // icp.setMaximumIterations(100);
+        // icp.setTransformationEpsilon(1e-6);
+        // icp.setEuclideanFitnessEpsilon(1e-6);
+        // icp.setRANSACIterations(0);
 
-        // Align clouds
-        icp.setInputSource(cureKeyframeCloud);  //输入当前实时帧和回环找到的匹配帧
-        icp.setInputTarget(prevKeyframeCloud);
-        pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
-        icp.align(*unused_result);  //?ICP配准没有用上初始位姿？
-        // giseop 
-        // TODO icp align with initial 
+        // // Align clouds
+        // icp.setInputSource(cureKeyframeCloud);  //输入当前实时帧和回环找到的匹配帧
+        // icp.setInputTarget(prevKeyframeCloud);
+        // pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
+        // icp.align(*unused_result);  //?ICP配准没有用上初始位姿？
+        // // giseop 
+        // // TODO icp align with initial 
 
-        if (icp.hasConverged() == false || icp.getFitnessScore() > historyKeyframeFitnessScore) {
-            std::cout << "ICP fitness test failed (" << icp.getFitnessScore() << " > " << historyKeyframeFitnessScore << "). Reject this SC loop." << std::endl;
-            return;
-        } else {
-            std::cout << "ICP fitness test passed (" << icp.getFitnessScore() << " < " << historyKeyframeFitnessScore << "). Add this SC loop." << std::endl;
-        }
+        // if (icp.hasConverged() == false || icp.getFitnessScore() > historyKeyframeFitnessScore) {
+        //     std::cout << "ICP fitness test failed (" << icp.getFitnessScore() << " > " << historyKeyframeFitnessScore << "). Reject this SC loop." << std::endl;
+        //     return;
+        // } else {
+        //     std::cout << "ICP fitness test passed (" << icp.getFitnessScore() << " < " << historyKeyframeFitnessScore << "). Add this SC loop." << std::endl;
+        // }
 
-        // publish corrected cloud
-        if (pubIcpKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅ICP配准转换后的点云
-        {
-            pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
-            pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());  //将当前帧用ICP配准后的转换矩阵转换
-            publishCloud(&pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);    //发布转换后的实时帧
-        }
+        // // publish corrected cloud
+        // if (pubIcpKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅ICP配准转换后的点云
+        // {
+        //     pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
+        //     pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());  //将当前帧用ICP配准后的转换矩阵转换
+        //     publishCloud(&pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);    //发布转换后的实时帧
+        // }
 
-        // Get pose transformation
-        float x, y, z, roll, pitch, yaw;
-        Eigen::Affine3f correctionLidarFrame;   //定义一个三维仿射变换矩阵
-        correctionLidarFrame = icp.getFinalTransformation();    //获取配准后的转换矩阵 getFinalTransformation()返回的是4x4矩阵
+        // // Get pose transformation
+        // float x, y, z, roll, pitch, yaw;
+        // Eigen::Affine3f correctionLidarFrame;   //定义一个三维仿射变换矩阵
+        // correctionLidarFrame = icp.getFinalTransformation();    //获取配准后的转换矩阵 getFinalTransformation()返回的是4x4矩阵
 
-        // // transform from world origin to wrong pose
-        // Eigen::Affine3f tWrong = pclPointToAffine3f(copy_cloudKeyPoses6D->points[loopKeyCur]);
-        // // transform from world origin to corrected pose
-        // Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
-        // pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
+        // // // transform from world origin to wrong pose
+        // // Eigen::Affine3f tWrong = pclPointToAffine3f(copy_cloudKeyPoses6D->points[loopKeyCur]);
+        // // // transform from world origin to corrected pose
+        // // Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
+        // // pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
+        // // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
+        // // gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
+
+        // // gtsam::Vector Vector6(6);
+        // // float noiseScore = icp.getFitnessScore();
+        // // Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
+        // // noiseModel::Diagonal::shared_ptr constraintNoise = noiseModel::Diagonal::Variances(Vector6);
+
+        // // giseop 
+        // pcl::getTranslationAndEulerAngles (correctionLidarFrame, x, y, z, roll, pitch, yaw);    //从变换矩阵中获取转换值
         // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
-        // gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
+        // gtsam::Pose3 poseTo = Pose3(Rot3::RzRyRx(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0));
 
-        // gtsam::Vector Vector6(6);
-        // float noiseScore = icp.getFitnessScore();
-        // Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
-        // noiseModel::Diagonal::shared_ptr constraintNoise = noiseModel::Diagonal::Variances(Vector6);
+        // // giseop, robust kernel for a SC loop
+        // float robustNoiseScore = 0.5; // constant is ok...
+        // gtsam::Vector robustNoiseVector6(6); 
+        // robustNoiseVector6 << robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore;
+        // noiseModel::Base::shared_ptr robustConstraintNoise; 
+        // robustConstraintNoise = gtsam::noiseModel::Robust::Create(
+        //     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure, but with a good front-end loop detector, Cauchy is empirically enough.
+        //     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6)
+        // ); // - checked it works. but with robust kernel, map modification may be delayed (i.e,. requires more true-positive loop factors)
 
-        // giseop 
-        pcl::getTranslationAndEulerAngles (correctionLidarFrame, x, y, z, roll, pitch, yaw);    //从变换矩阵中获取转换值
-        gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
-        gtsam::Pose3 poseTo = Pose3(Rot3::RzRyRx(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0));
+        // // Add pose constraint
+        // mtx.lock();
+        // loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
+        // loopPoseQueue.push_back(poseFrom.between(poseTo));  //
+        // loopNoiseQueue.push_back(robustConstraintNoise);
+        // mtx.unlock();
 
-        // giseop, robust kernel for a SC loop
-        float robustNoiseScore = 0.5; // constant is ok...
-        gtsam::Vector robustNoiseVector6(6); 
-        robustNoiseVector6 << robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore;
-        noiseModel::Base::shared_ptr robustConstraintNoise; 
-        robustConstraintNoise = gtsam::noiseModel::Robust::Create(
-            gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure, but with a good front-end loop detector, Cauchy is empirically enough.
-            gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6)
-        ); // - checked it works. but with robust kernel, map modification may be delayed (i.e,. requires more true-positive loop factors)
-
-        // Add pose constraint
-        mtx.lock();
-        loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
-        loopPoseQueue.push_back(poseFrom.between(poseTo));  //
-        loopNoiseQueue.push_back(robustConstraintNoise);
-        mtx.unlock();
-
-        // add loop constriant
-        // loopIndexContainer[loopKeyCur] = loopKeyPre;
-        SCloopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
+        // // add loop constriant
+        // // loopIndexContainer[loopKeyCur] = loopKeyPre;
+        // SCloopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
     } // performSCLoopClosure
 
     void NDperformSCLoopClosure()     //执行ND回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
@@ -1313,136 +1327,6 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-
-        // //获取平移矩阵并验证
-        // {
-        //     int num_shift = (int)(rad2deg(yawDiffRad) / 6);
-        //     // cout << "cur eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyCur].size() << endl;
-        //     // cout << "can eloid num is: "  << ndManager.cloud_voxel_eloid[loopKeyPre].size() << endl;
-        //     Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(ndManager.cloud_voxel_eloid[loopKeyCur],ndManager.cloud_voxel_eloid[loopKeyPre],(int)num_shift);
-
-        //     Eigen::Vector3d gt_center_vector = {pose_ground_truth[loopKeyCur](0,3) - pose_ground_truth[loopKeyPre](0,3),
-        //                                         pose_ground_truth[loopKeyCur](1,3) - pose_ground_truth[loopKeyPre](1,3),
-        //                                         pose_ground_truth[loopKeyCur](2,3) - pose_ground_truth[loopKeyPre](2,3)};
-
-        //     double cos_vector = (translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm());
-        //     double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
-        //                        (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
-        //                        (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
-        //     double dist_self = sqrt((translation[0]) * (translation[0]) + 
-        //                             (translation[1]) * (translation[1]) +
-        //                             (translation[2]) * (translation[2]));
-        //     // cout << "gt center vector: " << endl;
-        //     // cout << gt_center_vector << endl;
-
-        //     // cout << "cos_error: " << cos_vector << endl;
-        //     cout << "dis_error: " << dist << endl;
-        //     cout << "dis_self: " << dist_self << endl;
-
-        //     std::pair<double, double> error = {cos_vector,dist_self};
-
-        //     error_arry.push_back(error);
-        // }
-
-        // std::cout << "[ND] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
-
-        //xwl 描述符匹配旋转位姿转换对比
-
-
-        // // extract cloud
-        // pcl::PointCloud<PointType>::Ptr cureKeyframeCloud(new pcl::PointCloud<PointType>());
-        // pcl::PointCloud<PointType>::Ptr prevKeyframeCloud(new pcl::PointCloud<PointType>());
-        // // {
-            // loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, loopKeyPre); // giseop 
-            // loopFindNearKeyframes(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum);
-
-            // int base_key = 0;
-            // loopFindNearKeyframesWithRespectTo(cureKeyframeCloud, loopKeyCur, 0, base_key); // giseop 
-            // loopFindNearKeyframesWithRespectTo(prevKeyframeCloud, loopKeyPre, historyKeyframeSearchNum, base_key); // giseop    //获取转换后的点云
-
-            // if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)    //? 这里判断点云内的点数量是否足够？
-            //     return;
-            // if (pubHistoryKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅历史关键帧话题 getNumSubscribers返回是否有节点订阅
-            //     publishCloud(&pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);   //发布历史关键点云话题 输入 话题名 点云指针 当前ros时间 点云坐标系
-        // }
-
-
-        
-
-        // ICP Settings
-        // static pcl::IterativeClosestPoint<PointType, PointType> icp;
-        // icp.setMaxCorrespondenceDistance(150); // giseop , use a value can cover 2*historyKeyframeSearchNum range in meter 
-        // icp.setMaximumIterations(100);
-        // icp.setTransformationEpsilon(1e-6);
-        // icp.setEuclideanFitnessEpsilon(1e-6);
-        // icp.setRANSACIterations(0);
-
-        // Align clouds
-        // icp.setInputSource(cureKeyframeCloud);  //输入当前实时帧和回环找到的匹配帧
-        // icp.setInputTarget(prevKeyframeCloud);
-        // pcl::PointCloud<PointType>::Ptr unused_result(new pcl::PointCloud<PointType>());
-        // icp.align(*unused_result);  //?ICP配准没有用上初始位姿？
-        // // giseop 
-        // // TODO icp align with initial 
-
-        // if (icp.hasConverged() == false || icp.getFitnessScore() > historyKeyframeFitnessScore) {
-        //     std::cout << "ICP fitness test failed (" << icp.getFitnessScore() << " > " << historyKeyframeFitnessScore << "). Reject this SC loop." << std::endl;
-        //     return;
-        // } else {
-        //     std::cout << "ICP fitness test passed (" << icp.getFitnessScore() << " < " << historyKeyframeFitnessScore << "). Add this SC loop." << std::endl;
-        // }
-
-        // publish corrected cloud
-        // if (pubIcpKeyFrames.getNumSubscribers() != 0)   //判断是否有节点订阅ICP配准转换后的点云
-        // {
-        //     pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
-        //     pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());  //将当前帧用ICP配准后的转换矩阵转换
-        //     publishCloud(&pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);    //发布转换后的实时帧
-        // }
-
-        // Get pose transformation
-        // float x, y, z, roll, pitch, yaw;
-        // Eigen::Affine3f correctionLidarFrame;   //定义一个三维仿射变换矩阵
-        // correctionLidarFrame = icp.getFinalTransformation();    //获取配准后的转换矩阵 getFinalTransformation()返回的是4x4矩阵
-
-        // // transform from world origin to wrong pose
-        // Eigen::Affine3f tWrong = pclPointToAffine3f(copy_cloudKeyPoses6D->points[loopKeyCur]);
-        // // transform from world origin to corrected pose
-        // Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
-        // pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
-        // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
-        // gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
-
-        // gtsam::Vector Vector6(6);
-        // float noiseScore = icp.getFitnessScore();
-        // Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
-        // noiseModel::Diagonal::shared_ptr constraintNoise = noiseModel::Diagonal::Variances(Vector6);
-
-        // giseop 
-        // pcl::getTranslationAndEulerAngles (correctionLidarFrame, x, y, z, roll, pitch, yaw);    //从变换矩阵中获取转换值
-        // gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
-        // gtsam::Pose3 poseTo = Pose3(Rot3::RzRyRx(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0));
-
-        // giseop, robust kernel for a SC loop
-        // float robustNoiseScore = 0.5; // constant is ok...
-        // gtsam::Vector robustNoiseVector6(6); 
-        // robustNoiseVector6 << robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore;
-        // noiseModel::Base::shared_ptr robustConstraintNoise; 
-        // robustConstraintNoise = gtsam::noiseModel::Robust::Create(
-        //     gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure, but with a good front-end loop detector, Cauchy is empirically enough.
-        //     gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6)
-        // ); // - checked it works. but with robust kernel, map modification may be delayed (i.e,. requires more true-positive loop factors)
-
-        // Add pose constraint
-        // mtx.lock();
-        // loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
-        // loopPoseQueue.push_back(poseFrom.between(poseTo));  //
-        // loopNoiseQueue.push_back(robustConstraintNoise);
-        // mtx.unlock();
-
-        // add loop constriant
-        // loopIndexContainer[loopKeyCur] = loopKeyPre;
-        // loopIndexContainer.insert(std::pair<int, int>(loopKeyCur, loopKeyPre)); // giseop for multimap  //将当前帧与历史帧中匹配好的对应帧同时储存
     }
 
     void MIXperformSCLoopClosure()     //执行MIX回环闭合 检测是否有回环 并对回环进行配准校正位姿并保存
@@ -1463,48 +1347,78 @@ public:
         // std::cout << "[MIX] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
     }
 
-    void EloidperformSCLoopClosure()
-    {
-        //获取真实的帧id
-        
-        // std::vector<int> detectResult = elmanager.DetectLoopClosureID(laser_cloud_frame_number);
-        std::vector<int> detectResult = elmanager.GetCandidatesFrameID(laser_cloud_frame_number);
 
-        //候选id与真值对比
-        static double loop_true_num = 0;
-        static double loop_num = 0;
-        if(detectResult.empty() == 0)
+
+    double EvaluateLoopFramePrecise(vector<int> inquiry_id, vector<int> loop_id)
+    {
+        //id与真值对比
+        double loop_num = 0;
+        double loop_true_num = 0;
+        int gt_range_dist = 10; //判断为准确的距离
+
+        if(inquiry_id.size() != loop_id.size())
+            return -1;
+
+        for(int i = 0; i < loop_id.size(); i++)
         {
             int loop_enable = 0;
             int loop_true  = 0;
-            int loop_true_id = -1;
+            int gt_true_id = -1;
+
+            //遍历寻找是否为真值
             for(auto gt_it : loopclosure_gt_index)
             {
-                if(gt_it.first == laser_cloud_frame_number)
+                //判断是是否为loop真值
+                if(gt_it.first == inquiry_id[i])
                 {
                     loop_enable = 1;
-                    loop_true_id = gt_it.second;
+                    gt_true_id = gt_it.second;
                     loop_num++;
                 }
-
             }
-            for(auto detectresult_it : detectResult)
-            {  
-                if(detectresult_it <= (loop_true_id + 20) && detectresult_it >= (loop_true_id - 20))  //满足在20帧内？
+
+            if(loop_enable == 1)
+            {
+                double dist = sqrt( (pose_ground_truth[loop_id[i]](0,3) - pose_ground_truth[gt_true_id](0,3)) *
+                                    (pose_ground_truth[loop_id[i]](0,3) - pose_ground_truth[gt_true_id](0,3)) +
+                                    (pose_ground_truth[loop_id[i]](2,3) - pose_ground_truth[gt_true_id](2,3)) *
+                                    (pose_ground_truth[loop_id[i]](2,3) - pose_ground_truth[gt_true_id](2,3)) );
+
+                if(dist < gt_range_dist)                                                                                //使用距离值判断
                 {
+
+                    cout << "[ALL]  Loop Frame Perform   current id: " << inquiry_id[i] << " distance range: " << dist << endl;
                     loop_true = 1;
-                    break;
                 }
             }
+
             if(loop_enable && loop_true)
                 loop_true_num++;
         }
 
+        return loop_true_num / loop_num;
+    }
+
+
+    void EloidperformLoopClosure()
+    {
+        //获取真实的帧id
+        
+
+        std::pair<int, float> detectResult = elmanager.Localization(laser_cloud_frame_number);
+        elmanager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
+        elmanager.evaluate_data.loop_id.push_back(elmanager.database_gt_id[detectResult.first]);
+        
+
+
+        //hash + kd tree 测试
+        // elmanager.database_vertical_invkeys_mat_after_hashfliter_.clear();
+        // elmanager.after_database_gt_id.clear();
+
         if(gt_frame_index == 800)       //因为bag包内只有801帧，所以先设置为800
-        { 
-            cout << "loop true num: " << loop_true_num << endl;
-            cout << "input loop true num: " << loop_num << endl;
-            cout << "can id current ratio: " << loop_true_num / loop_num << endl;
+        {
+            double precise = EvaluateLoopFramePrecise(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id);
+            cout << "[EL]  Eloid Perform Loop Closure    id current ratio: " << precise << endl;
         }
 
     } 
@@ -1613,28 +1527,28 @@ public:
             // std::cout << "xwl make and save scan context and keys" << std::endl;
             pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
             pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云
-            scManager.makeAndSaveScancontextAndKeys(*thisRawCloudKeyFrame);    //使用点云进行描述符制作
+            scManager.makeAndSaveInquiryScancontextAndKeys(*thisRawCloudKeyFrame, laser_cloud_frame_number);    //使用点云进行描述符制作
             scManager.context_origin_index.push_back(laser_cloud_frame_number);          //保存原始点云帧序号
         }  
 
         // save sc data
-        const auto& curr_scd = scManager.getConstRefRecentSCD();    //获取当前的SC描述矩阵
-        std::string curr_scd_node_idx = padZeros(scManager.polarcontexts_.size() - 1);  //记下当前矩阵序号（string） 用于保存文件的命名
+        // const auto& curr_scd = scManager.getConstRefRecentSCD();    //获取当前的SC描述矩阵
+        // std::string curr_scd_node_idx = padZeros(scManager.database_polarcontexts_.size() - 1);  //记下当前矩阵序号（string） 用于保存文件的命名
 
-        saveSCD(saveSCDDirectory + curr_scd_node_idx + ".scd", curr_scd);   //命名并保存矩阵
+        // saveSCD(saveSCDDirectory + curr_scd_node_idx + ".scd", curr_scd);   //命名并保存矩阵
 
 
         // save keyframe cloud as file giseop
-        bool saveRawCloud { true }; //这里是选择保存哪种类型的点云
-        pcl::PointCloud<PointType>::Ptr thisKeyFrameCloud(new pcl::PointCloud<PointType>());
-        if(saveRawCloud) { 
-            *thisKeyFrameCloud += *laserCloudRaw;
-        } else {
-            // *thisKeyFrameCloud += *thisCornerKeyFrame;
-            // *thisKeyFrameCloud += *thisSurfKeyFrame;
-        }
-        pcl::io::savePCDFileBinary(saveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
-        pgTimeSaveStream << laserCloudRawTime << std::endl;
+        // bool saveRawCloud { true }; //这里是选择保存哪种类型的点云
+        // pcl::PointCloud<PointType>::Ptr thisKeyFrameCloud(new pcl::PointCloud<PointType>());
+        // if(saveRawCloud) { 
+        //     *thisKeyFrameCloud += *laserCloudRaw;
+        // } else {
+        //     // *thisKeyFrameCloud += *thisCornerKeyFrame;
+        //     // *thisKeyFrameCloud += *thisSurfKeyFrame;
+        // }
+        // pcl::io::savePCDFileBinary(saveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
+        // pgTimeSaveStream << laserCloudRawTime << std::endl;
     }
 
     void NDsaveKeyFramesAndFactor()     //ND描述符制作
@@ -1706,7 +1620,7 @@ public:
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
 
-        // std::cout << "[ND] make and save ND scan context and keys" << std::endl;
+        // std::cout << "[EL] make and save scan context and keys" << std::endl;
 
         pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);                                //复制点云

@@ -48,7 +48,7 @@ using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
 #define CUSTOM_HASH_ENABLE 1    //测试用 开启自定义hash
 
-//哈希表键值类
+//哈希表键值类  自定义哈希使用
 struct HashKey{
     int mode;
     int cloud_exit;
@@ -61,8 +61,8 @@ struct HashKeyEqual{
     {
         // return lhs.mode == rhs.mode && lhs.cloud_exit == rhs.cloud_exit && lhs.mean_qf == rhs.mean_qf;
         // return lhs.mode == rhs.mode && lhs.cloud_exit == rhs.cloud_exit && lhs.mean_z == rhs.mean_z;
-        // return lhs.mode == rhs.mode && lhs.mean_qf == rhs.mean_qf;
-        return lhs.mean_qf == rhs.mean_qf;
+        return lhs.mode == rhs.mode && lhs.cloud_exit == rhs.cloud_exit;
+        // return lhs.mean_qf == rhs.mean_qf;
     }
 };
 struct GetHashKey{
@@ -70,8 +70,8 @@ struct GetHashKey{
     {
         // return hash<int>()(k.cloud_exit) ^ hash<int>()(k.mean_qf) ^ hash<int>()(k.mode);
         // return hash<int>()(k.cloud_exit) ^ hash<int>()(k.mode) ^ hash<int>()(k.mean_z);
-        // return hash<int>()(k.mode) ^ hash<int>()(k.mean_qf);
-        return hash<int>()(k.mean_qf);
+        return hash<int>()(k.mode) ^ hash<int>()(k.cloud_exit);
+        // return hash<int>()(k.mean_qf);
     }
 };
 
@@ -79,39 +79,62 @@ struct GetHashKey{
 class EllipsoidLocalization : public BaseGlobalLocalization //全局算法基类
 {
 public:
-    std::vector<Frame_Ellipsoid> database_frame_eloid;                   //数据库存储的椭球模型
-    std::vector<Frame_Ellipsoid> cur_frame_eloid;                        //存储的查询帧椭球模型
-    
+//evaluate
+    Evaluate evaluate_data;
+
+//base data
+    std::vector<Frame_Ellipsoid> database_frame_eloid;                      //数据库存储的椭球模型
+    std::vector<Frame_Ellipsoid> cur_frame_eloid;                           //存储的查询帧椭球模型
+    std::vector<int> database_gt_id;                                        //database的对应真值id
+    std::vector<int> inquiry_gt_id;                                        //inquiry的对应真值id
+
 //hash
     std::vector<std::vector<int> > database_frame_eloid_key;             //数据库中各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
     std::vector<std::vector<int> > cur_frame_eloid_key;                  //查询帧各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
 
     std::unordered_map<int, vector<int> > eloid_eigen_map;              //椭球特征值的hash
 
-    //eloid
+    //base function
     void MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
     void MakeInquiryEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
+    std::pair<int, float> Localization(int frame_id);
+
+//检索部分
+    //原hash
+    void MakeDatabaseHashForm(int frame_id);        //数据集的hash表制作
+    void MakeCurrentHashForm(int frame_id);         //查询集的hash表制作
     int GetEloidEigenKey(Ellipsoid eloid);
     vector<int> GetHashFrameID(int key);
+    std::vector<int> GetCandidatesFrameIDwithHash(int frame_id);
 
-    std::vector<int> DetectLoopClosureID(int frame_id);
-    std::pair<int, float> Localization(std::vector<int> can_id);
-
-//自定义hash
+    //自定义hash
     std::unordered_map<HashKey, vector<int>, GetHashKey, HashKeyEqual> custom_frame_hash;
     std::vector<std::vector<HashKey> > database_custom_frame_eloid_key; 
     std::vector<std::vector<HashKey> > cur_custom_frame_eloid_key;
     HashKey GetEloidEigenKeyCustom(Ellipsoid eloid);
     vector<int> GetHashFrameIDCustom(HashKey key);
 
-//kd树（sc改版）
+    //kd树（sc改版）
     KeyMat database_vertical_invkeys_mat_;                //数据帧垂直方向上的键值集合
     KeyMat cur_vertical_invkeys_mat_;                     //查询帧垂直方向上的键值集合
     KeyMat vertical_invkeys_to_search_;
     std::unique_ptr<InvKeyTree> verticalkey_tree_;
-    std::vector<int> database_true_frame_id;                //储存数据库真实id，用于kd树后的id对应匹配
+
+    std::vector<int> GetCandidatesFrameIDwithMatrix(int frame_id);    //返回在data数据中的索引，并非真实帧id，真实id需要通过database_gt_id来转换
+
+    //hash + kd树 测试
+    KeyMat database_vertical_invkeys_mat_after_hashfliter_;         //过滤后的数据库
+    std::vector<int> after_database_gt_id;                            //after database的对应真值id
 
 
-    std::vector<int> GetCandidatesFrameID(int frame_id);
+//匹配部分
+    //协方差匹配
+    const double MAX_COV_SIMILARITY_EUCLID  = 10;
+    const double MAX_COV_SIMILARITY_COS  = 0.9;
+
+    std::pair<int, double> LocalizationWithCov(std::vector<int> can_index);
+    std::pair<double, Ellipsoid> FindNearestModel(Ellipsoid inquiry_model, std::vector<Ellipsoid> can_model);
+    double GetCovSimilarityWithEuclidean(Eigen::Matrix3d inquiry_cov, Eigen::Matrix3d can_cov);
+    double GetCovSimilarityWithCos(Matrix3d _sc1, Matrix3d _sc2);
 
 };  
