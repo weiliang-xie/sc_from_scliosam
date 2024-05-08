@@ -6,11 +6,16 @@
 #include <vector>
 #include <string>
 #include <Eigen/Dense>
+#include <functional>
 
 #include <numeric>
 
 
 using namespace std;
+
+std::vector<Eigen::MatrixXd> GetSingularvalue(Eigen::MatrixXd bin_cov);
+bool feature_point_cmp(Eigen::Vector3d point1, Eigen::Vector3d point2);
+Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
 
 //特征数据库描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
 void EllipsoidLocalization::MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
@@ -34,10 +39,10 @@ void EllipsoidLocalization::MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPo
 void EllipsoidLocalization::MakeInquiryEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
 {
     DivideVoxel(_scan_cloud);
-    cur_frame_eloid.push_back(BulidingEllipsoidModel());
+    inquiry_frame_eloid.push_back(BulidingEllipsoidModel());
     inquiry_gt_id.push_back(frame_id);
-    // cout << "[EL]  Cur Frame Make Eloid  ground eloid num is: " << cur_frame_eloid.back().ground_voxel_eloid.size() << endl;
-    // cout << "[EL]  Cur Frame Make Eloid  non ground eloid num is: " << cur_frame_eloid.back().nonground_voxel_eloid.size() << endl;
+    // cout << "[EL]  Cur Frame Make Eloid  ground eloid num is: " << inquiry_frame_eloid.back().ground_voxel_eloid.size() << endl;
+    // cout << "[EL]  Cur Frame Make Eloid  non ground eloid num is: " << inquiry_frame_eloid.back().nonground_voxel_eloid.size() << endl;
     // cout << endl;
 
     //sc改版 建立描述符和键值
@@ -135,7 +140,7 @@ void EllipsoidLocalization::MakeCurrentHashForm(int frame_id)
 #else
     std::vector<int> cur_frame_eigen_key;
 #endif
-    for(auto non_gd_it : cur_frame_eloid.back().nonground_voxel_eloid)
+    for(auto non_gd_it : inquiry_frame_eloid.back().nonground_voxel_eloid)
     {
         // cout << non_gd_it.num_exit << " " << non_gd_it.center[2] << ",";
 #if CUSTOM_HASH_ENABLE
@@ -206,7 +211,7 @@ std::vector<int> EllipsoidLocalization::GetCandidatesFrameIDwithHash(int frame_i
 #if CUSTOM_HASH_ENABLE
     auto curr_key = cur_custom_frame_eloid_key.back();         //查询帧key值
 #else 
-    auto curr_key = cur_frame_eloid_key.back();         //查询帧key值
+    auto curr_key = inquiry_frame_eloid_key.back();         //查询帧key值
 #endif
     vector<int> vote_num(max_frame_id, 0);          //存放投票数量的结构体，用于进一步判断
     for(auto it : curr_key)
@@ -365,13 +370,13 @@ std::vector<int> EllipsoidLocalization::GetCandidatesFrameIDwithMatrix(int frame
 
 
 /*-------------------------匹配部分 协方差矩阵对比-------------------------*/
-//返回值是  索引+相似度
+//返回值是  索引+相似度 返回的索引，并非真实帧id，真实id需要通过database_gt_id来转换
 std::pair<int, double> EllipsoidLocalization::LocalizationWithCov(std::vector<int> can_index)
 {
     int max_overlap = 0;
     int max_overlap_index = 0;
 
-    Frame_Ellipsoid cur_eloid_model = cur_frame_eloid.back();
+    Frame_Ellipsoid cur_eloid_model = inquiry_frame_eloid.back();
     for(auto can_index_it : can_index)
     {
         double loop_eloid_num = 0;
@@ -461,3 +466,187 @@ double EllipsoidLocalization::GetCovSimilarityWithCos(Matrix3d _sc1, Matrix3d _s
 }
 
 
+/*---------------------------------------------------------------------------获取转移矩阵---------------------------------------------------------------------------*/
+//匹配点刚性转置获取转移矩阵 旋转基底为参数1特征点所在的坐标系
+Eigen::Matrix4d EllipsoidLocalization::MakeFeaturePointandGetTransformMatirx(Frame_Ellipsoid frame_eloid_1, Frame_Ellipsoid frame_eloid_2)
+{
+    std::vector<Eigen::Vector3d> feature_point_1 = MakeFeaturePoint(frame_eloid_1);
+    std::vector<Eigen::Vector3d> feature_point_2 = MakeFeaturePoint(frame_eloid_2);
+
+    return GetTransformMatrix(feature_point_1, feature_point_2);
+}
+
+Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1, std::vector<Eigen::Vector3d> feature_point_2)
+{
+    //判断特征点数量
+    int point_num_;
+    if(feature_point_1.size() != feature_point_2.size())
+    {
+        cout << "feature point num incorperate" << endl;
+        Eigen::Matrix4d result = Eigen::Matrix4d::Zero();
+        return result;
+    }else{
+        point_num_ = feature_point_1.size();
+        cout << "feature point num: " << point_num_ << endl;
+    }
+
+    //求特征点中心
+    Eigen::Vector3d feature_point_1_mean_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d feature_point_2_mean_ = Eigen::Vector3d::Zero();
+    for(int i = 0; i < point_num_; i++)
+    {
+        feature_point_1_mean_ += feature_point_1[i];
+        feature_point_2_mean_ += feature_point_2[i];
+    }
+    feature_point_1_mean_ /= point_num_;
+    feature_point_2_mean_ /= point_num_;
+    cout << "feature point 1 mean: " << feature_point_1_mean_.transpose() << endl;
+    cout << "feature point 2 mean: " << feature_point_2_mean_.transpose() << endl;
+
+    //求S = XY
+    Eigen::Matrix3d S = Eigen::Matrix3d::Zero();
+    for(int i = 0; i < point_num_; i++)
+    {
+        S += (feature_point_1[i] - feature_point_1_mean_) * (feature_point_2[i] - feature_point_2_mean_).transpose();
+    }
+
+    cout << "S is: " << S << endl;
+
+
+    //奇异值分解
+    Eigen::MatrixXd S_ = S;
+    std::vector<Eigen::MatrixXd> svd_matrix = GetSingularvalue(S_);
+    Eigen::Matrix3d U = svd_matrix[0];
+    Eigen::Matrix3d V = svd_matrix[1];
+
+    cout << "U is: " << U << endl;
+    cout << "V is: " << V << endl;
+
+
+    //求旋转矩阵
+    Eigen::Matrix3d M = Eigen::Matrix3d::Identity();
+    M(2,2) =  (V * U.transpose()).determinant();
+
+    Eigen::Matrix3d rotate_matrix = V * M * U.transpose();
+
+    cout << "rotate matrix is: " << rotate_matrix << endl;
+
+    Eigen::Vector3d translate_vector = feature_point_2_mean_ - rotate_matrix * feature_point_1_mean_;
+
+    cout << "translate vector is: " << translate_vector.transpose() << endl;
+
+    //组装转移矩阵
+    Eigen::Matrix4d transform_matrix = Eigen::Matrix4d::Zero();
+    transform_matrix.block(0,0,3,3) = rotate_matrix;
+    transform_matrix(0,3) = translate_vector[0];
+    transform_matrix(1,3) = translate_vector[1];
+    transform_matrix(2,3) = translate_vector[2];
+    transform_matrix(3,3) = 1;
+
+    cout << "transform matrix is: " << transform_matrix << endl;
+
+    return transform_matrix;
+}
+
+
+//奇异值分解 输入 协方差  输出 U V
+std::vector<Eigen::MatrixXd> GetSingularvalue(Eigen::MatrixXd bin_cov)
+{
+	const int rows = bin_cov.rows();
+	const int cols = bin_cov.cols();
+
+	std::vector<double> vec_;
+	for (int i = 0; i < rows; ++i) {
+        for(int j = 0; j < cols; ++j){
+            vec_.insert(vec_.begin() + i * cols + j, bin_cov(i, j));
+        }
+	}
+	Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> m(vec_.data(), rows, cols);
+ 
+	// fprintf(stderr, "source matrix:\n");
+	// std::cout << m << std::endl;
+ 
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(m, Eigen::ComputeFullV | Eigen::ComputeFullU); // ComputeThinU | ComputeThinV //奇异值分解
+	Eigen::MatrixXd singular_values = svd.singularValues(); //奇异值
+	Eigen::MatrixXd left_singular_vectors = svd.matrixU();  //左奇异值向量 U
+	Eigen::MatrixXd right_singular_vectors = svd.matrixV(); //右奇异值向量 V
+
+    std::vector<Eigen::MatrixXd> result;
+    result.push_back(left_singular_vectors);
+    result.push_back(right_singular_vectors);
+ 
+	return result;
+}
+
+
+bool feature_point_cmp(Eigen::Vector3d point1, Eigen::Vector3d point2)
+{
+    if(point1[2] > point2[2])
+        return true;
+    else
+        return false;
+} 
+
+//制作带有对应关系的特征点集
+std::vector<Eigen::Vector3d> EllipsoidLocalization::MakeFeaturePoint(Frame_Ellipsoid frame_eloid)
+{
+    //选取高度最高的前n个mean作为特征匹配点
+    vector<Eigen::Vector3d> max_z_center;
+    for(auto eloid_it : frame_eloid.nonground_voxel_eloid)
+    {
+        if(max_z_center.size() < FEATRUE_POINT_NUMS)
+        {
+            max_z_center.push_back(eloid_it.center);
+        }else
+        {
+            sort(max_z_center.begin(), max_z_center.end(), feature_point_cmp);
+
+            if(max_z_center[FEATRUE_POINT_NUMS - 1][2] < eloid_it.center[2])
+            {
+                max_z_center[FEATRUE_POINT_NUMS - 1] = eloid_it.center;
+            }
+        }
+    }
+
+    sort(max_z_center.begin(), max_z_center.end(), feature_point_cmp);
+
+    cout << "max center z:";
+    for(auto max_z : max_z_center)
+    {
+        cout << " " << max_z[2];
+    }
+    cout << endl;
+
+    return max_z_center;
+}
+
+
+//转移矩阵评价函数  TE(m) RE(deg)
+std::pair<double, double> EllipsoidLocalization::EvaluateTransformMatrixWithTERE(Eigen::Matrix4d gt, Eigen::Matrix4d measure)
+{
+    double trans_error,rotate_error;
+
+    // cout << "gt: " << gt << endl;
+    // cout << "measure: " << measure << endl;
+
+    Eigen::Vector4d gt_trans_vector = gt.col(3);
+    Eigen::Vector4d measure_trans_vector = measure.col(3);
+    // cout << "gt translate: " << gt_trans_vector.transpose() << endl;
+    // cout << "measure translate: " << measure_trans_vector.transpose() << endl;
+
+    trans_error = (gt_trans_vector - measure_trans_vector).norm();
+
+    //旋转矩阵求角度差
+    Eigen::Matrix3d gt_rotate_matrix = gt.block(0,0,3,3);
+    Eigen::Matrix3d measure_rotate_matrix = measure.block(0,0,3,3);
+
+    // cout << "gt rotate matrix: " << gt_rotate_matrix << endl;
+    // cout << "measure rotate matrix: " << measure_rotate_matrix << endl;
+
+    rotate_error = abs(acos(((gt_rotate_matrix.inverse() * measure_rotate_matrix).trace() - 1) / 2));
+
+    rotate_error = rotate_error * 180 / 3.1415926;
+
+    std::pair<double, double> result = {trans_error, rotate_error};
+    return result;
+}

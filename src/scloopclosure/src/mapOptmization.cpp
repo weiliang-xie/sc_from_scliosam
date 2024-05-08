@@ -552,7 +552,7 @@ public:
         pcl::PointCloud<PointType>::Ptr similar_cloud(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr dissimilar_cloud(new pcl::PointCloud<PointType>());
         pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/003304.pcd", *cur_cloud);        
-        pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/000724.pcd", *similar_cloud);        
+        pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/002356.pcd", *similar_cloud);        
         pcl::io::loadPCDFile<PointType>("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/000002.pcd", *dissimilar_cloud);        
 
         //读取sc矩阵
@@ -584,7 +584,7 @@ public:
         //平移矩阵获取验证
         // Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(cur_eloid,can_eloid,0);
 
-        // cout << "translation: " << endl << translation << endl;
+        // cout << "translation: " << BulidingEllipsoidModel()ndl << translation << endl;
 
         // Eigen::Vector3d gt_center_vector = {pose_ground_truth[can](0,3) - pose_ground_truth[cur](0,3),
         //                                     pose_ground_truth[can](1,3) - pose_ground_truth[cur](1,3),
@@ -651,6 +651,29 @@ public:
         // pcl::visualization::PCLVisualizer viewer;
         // viewer.setBackgroundColor(100,100,100); //设置背景颜色为黑色
         // // pcl::visualization::PointCloudColorHandlerCustom<PointType> green(*cloud)
+
+        //转移矩阵测试
+        elmanager.DivideVoxel(*cur_cloud);
+        Frame_Ellipsoid eloid_1 = elmanager.BulidingEllipsoidModel();
+        elmanager.DivideVoxel(*similar_cloud);
+        Frame_Ellipsoid eloid_2 = elmanager.BulidingEllipsoidModel();
+
+        Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_2, eloid_1);
+        // Eigen::Vector3d gt_translate_center_vector = {pose_ground_truth[3304](0,3) - pose_ground_truth[2356](0,3),
+        //                                                 pose_ground_truth[3304](1,3) - pose_ground_truth[2356](1,3),
+        //                                                 pose_ground_truth[3304](2,3) - pose_ground_truth[2356](2,3)};
+
+        cout << "gt pose: " << pose_ground_truth[3304] << endl;
+
+        Eigen::Matrix4d test_loop_pose = transform_matrix * pose_ground_truth[2356];
+
+        cout << "reference pose:" << pose_ground_truth[2356] << endl;
+
+        cout << "loop test pose: " << test_loop_pose << endl;
+
+        std::pair<double, double> test_transform = elmanager.EvaluateTransformMatrixWithTERE(pose_ground_truth[3304], test_loop_pose);
+        cout << "pose error:  translate: " << test_transform.first << " rotate: " << test_transform.second << endl;
+
     }
 
 
@@ -1348,7 +1371,7 @@ public:
     }
 
 
-
+    //位置识别准确率计算 通用函数 返回准确率
     double EvaluateLoopFramePrecise(vector<int> inquiry_id, vector<int> loop_id)
     {
         //id与真值对比
@@ -1379,15 +1402,13 @@ public:
 
             if(loop_enable == 1)
             {
-                double dist = sqrt( (pose_ground_truth[loop_id[i]](0,3) - pose_ground_truth[gt_true_id](0,3)) *
-                                    (pose_ground_truth[loop_id[i]](0,3) - pose_ground_truth[gt_true_id](0,3)) +
-                                    (pose_ground_truth[loop_id[i]](2,3) - pose_ground_truth[gt_true_id](2,3)) *
-                                    (pose_ground_truth[loop_id[i]](2,3) - pose_ground_truth[gt_true_id](2,3)) );
+                Eigen::Vector4d translate = pose_ground_truth[loop_id[i]].col(3) - pose_ground_truth[gt_true_id].col(3);
+                double dist = translate.norm();
 
                 if(dist < gt_range_dist)                                                                                //使用距离值判断
                 {
 
-                    cout << "[ALL]  Loop Frame Perform   current id: " << inquiry_id[i] << " distance range: " << dist << endl;
+                    // cout << "[ALL]  Loop Frame Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i]<< " distance range: " << dist << endl;
                     loop_true = 1;
                 }
             }
@@ -1397,6 +1418,58 @@ public:
         }
 
         return loop_true_num / loop_num;
+    }
+
+        //位置识别准确率计算 通用函数 返回准确率
+    void EvaluateTransformError(vector<int> inquiry_id, vector<int> loop_id, std::vector<Eigen::Matrix4d> transform_matrix)
+    {
+        //id与真值对比
+        int gt_range_dist = 10; //判断为准确的距离
+        std::vector<std::pair<double, double>> trans_errors;
+        if(inquiry_id.size() != loop_id.size())
+            return;
+
+        for(int i = 0; i < loop_id.size(); i++)
+        {
+            int loop_enable = 0;
+            int loop_true  = 0;
+            int gt_true_id = -1;
+
+            //遍历寻找是否为真值
+            for(auto gt_it : loopclosure_gt_index)
+            {
+                //判断是是否为loop真值
+                if(gt_it.first == inquiry_id[i])
+                {
+                    loop_enable = 1;
+                    gt_true_id = gt_it.second;
+                }
+            }
+
+            if(loop_enable == 1)
+            {
+                Eigen::Vector4d translate = pose_ground_truth[loop_id[i]].col(3) - pose_ground_truth[gt_true_id].col(3);
+                double dist = translate.norm();
+
+                if(dist < gt_range_dist)                                                                                //使用距离值判断
+                {
+                    Eigen::Matrix4d inquiry_transform_matrix_ = transform_matrix[i] * pose_ground_truth[loop_id[i]];
+                    // cout << endl << "inquiry id: " << inquiry_id[i] << " loop id: " << loop_id[i] << endl;
+                    // cout << "loop translate: " << pose_ground_truth[loop_id[i]].col(3).transpose() << endl;
+                    std::pair<double, double> pose_error_;
+                    pose_error_ = elmanager.EvaluateTransformMatrixWithTERE(pose_ground_truth[inquiry_id[i]], inquiry_transform_matrix_);
+                    cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate: " << pose_error_.first << " rotate: " << pose_error_.second << endl;
+                    trans_errors.push_back(pose_error_);
+                    
+                }
+            }
+        }
+
+        //保存误差数据
+        string name_translate_error = "translate_error";
+        string name_rotate_error = "rotate_error";
+        string error_file = savePCDDirectory + "ELD/others/eld_kitti_" + data_set_sq + "_transform_error.csv";
+        savedata(error_file, name_translate_error, name_rotate_error,trans_errors);
     }
 
 
@@ -1409,7 +1482,9 @@ public:
         elmanager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
         elmanager.evaluate_data.loop_id.push_back(elmanager.database_gt_id[detectResult.first]);
         
-
+        //获取转移矩阵
+        Eigen::Matrix4d transform_matrix_ = elmanager.MakeFeaturePointandGetTransformMatirx(elmanager.database_frame_eloid[detectResult.first], elmanager.inquiry_frame_eloid.back());
+        elmanager.transform_matrix.push_back(transform_matrix_);
 
         //hash + kd tree 测试
         // elmanager.database_vertical_invkeys_mat_after_hashfliter_.clear();
@@ -1419,6 +1494,9 @@ public:
         {
             double precise = EvaluateLoopFramePrecise(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id);
             cout << "[EL]  Eloid Perform Loop Closure    id current ratio: " << precise << endl;
+
+            //位姿评价
+            EvaluateTransformError(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id, elmanager.transform_matrix);
         }
 
     } 
@@ -1690,7 +1768,7 @@ int main(int argc, char** argv)
 
     mapOptimization MO;
 
-    // MO.testcode();
+    MO.testcode();
 
     //建立数据库
     MO.MakeMapFeatureBase();

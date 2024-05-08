@@ -84,13 +84,13 @@ public:
 
 //base data
     std::vector<Frame_Ellipsoid> database_frame_eloid;                      //数据库存储的椭球模型
-    std::vector<Frame_Ellipsoid> cur_frame_eloid;                           //存储的查询帧椭球模型
+    std::vector<Frame_Ellipsoid> inquiry_frame_eloid;                           //存储的查询帧椭球模型
     std::vector<int> database_gt_id;                                        //database的对应真值id
     std::vector<int> inquiry_gt_id;                                        //inquiry的对应真值id
 
 //hash
     std::vector<std::vector<int> > database_frame_eloid_key;             //数据库中各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
-    std::vector<std::vector<int> > cur_frame_eloid_key;                  //查询帧各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
+    std::vector<std::vector<int> > inquiry_frame_eloid_key;                  //查询帧各帧椭球的对应键值 与frame_eloid的nonground_voxel_eloid对应
 
     std::unordered_map<int, vector<int> > eloid_eigen_map;              //椭球特征值的hash
 
@@ -137,4 +137,12 @@ public:
     double GetCovSimilarityWithEuclidean(Eigen::Matrix3d inquiry_cov, Eigen::Matrix3d can_cov);
     double GetCovSimilarityWithCos(Matrix3d _sc1, Matrix3d _sc2);
 
+//转移矩阵部分
+    const int FEATRUE_POINT_NUMS = 30;                          //提取的特征点数量
+
+    std::vector<Eigen::Matrix4d> transform_matrix;
+
+    std::vector<Eigen::Vector3d> MakeFeaturePoint(Frame_Ellipsoid frame_eloid);
+    Eigen::Matrix4d MakeFeaturePointandGetTransformMatirx(Frame_Ellipsoid frame_eloid_1, Frame_Ellipsoid frame_eloid_2);
+    std::pair<double, double> EvaluateTransformMatrixWithTERE(Eigen::Matrix4d gt, Eigen::Matrix4d measure);
 };  

@@ -50,6 +50,7 @@ public:
     //loop id 准确率
     std::vector<int> loop_id;
     std::vector<int> inquiry_id;
+    std::vector<int> loop_status;
 
     Evaluate(){
 
