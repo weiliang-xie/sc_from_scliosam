@@ -24,6 +24,8 @@
 
 #include "nanoflann.hpp"
 #include "KDTreeVectorOfVectorsAdaptor.h"
+#include "BaseGlobalLocalization.h"
+
 
 #include "tictoc.h"
 
@@ -72,10 +74,12 @@ public:
         mode = -1;
         voxel_id = -1;
         max_h_center = {0};
+        num = 0;
     }
     bool valid;         //是否为满足评判相似度的椭球模型
     int mode;           //椭球类型 1：线性 2：平面型 3：立体型
     int voxel_id;       //体素id
+    int num;             //点云数量
     SCPointType max_h_center;       //测试 最大高度
 };
 
@@ -89,7 +93,8 @@ class NDManager
 {
 public:
     NDManager() = default;
-    void NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud);
+    void NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
+    void NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
     std::pair<int, float> NDdetectLoopClosureID( void ); // int: nearest node index, float: relative yaw  
     Eigen::MatrixXd NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud);
     Eigen::MatrixXd NDmakeRingkeyFromScancontext( Eigen::MatrixXd &_desc );
@@ -107,7 +112,7 @@ public:
     std::pair<std::vector<double>,Eigen::MatrixXd> NDGetEigenvalues(Eigen::MatrixXd bin_cov);
     Eigen::Vector3d NDGetTranslationMatrix(std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift);
     int NDGetringshift(Eigen::Vector3d translation);
-    Eigen::Matrix4d GetTransformMatrix(int col_num_shift,Eigen::Vector3d translation);
+    Eigen::Matrix4d GetTransformMatrixCombine(int col_num_shift,Eigen::Vector3d translation);
     std::pair<double, int> NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd &_sc2, std::vector<class Voxel_Ellipsoid> &v_eloid_cur,std::vector<class Voxel_Ellipsoid> &v_eloid_can);
     bool NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid);
     double NDDistVoxeleloid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can, int num_shift_col, int num_shift_row);
@@ -120,6 +125,12 @@ public:
     //关键椭球想法
     std::vector<class Voxel_Ellipsoid> GetKeyVoxelEllipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid);
     Eigen::Vector3d MatchKeyVoxelEllipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can);
+
+    //svd分解获取转移矩阵
+    std::vector<Eigen::Vector3d> NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid);
+    std::vector<Eigen::Vector3d> NDAlignFeaturePoint(std::vector<Eigen::Vector3d> feature_point, int align_scetor);
+    Eigen::Matrix4d NDGetTransformMatrixwithSVD(std::vector<Eigen::Vector3d> inquiry_feature_p, std::vector<Eigen::Vector3d> match_feature_p, int align_num);
+
 
 
 
@@ -138,7 +149,7 @@ public:
 public:
     const double LIDAR_HEIGHT = 2.0;                                                //雷达高度
     const int    ND_PC_NUM_RING = 20;                                               //圆环数量 沿径向切割
-    const int    ND_PC_NUM_SECTOR = 60;                                             //扇形数量 沿方位角切割
+    const int    ND_PC_NUM_SECTOR = 40;                                             //扇形数量 沿方位角切割
     const double ND_PC_MAX_RADIUS = 80.0;                                           //最大检测距离
     const double ND_PC_UNIT_SECTORANGLE = 360.0 / double(ND_PC_NUM_SECTOR);         //单元方位角角度 deg
     const double ND_PC_UNIT_RINGGAP = ND_PC_MAX_RADIUS / double(ND_PC_NUM_RING);    //径向单元长度
@@ -150,7 +161,7 @@ public:
     // loop thres
     const double ND_SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
     // const double ND_SC_DIST_THRES = 0.13; // empirically 0.1-0.2 is fine (rare false-alarms) for 20x60 polar context (but for 0.15 <, DCS or ICP fit score check (e.g., in LeGO-LOAM) should be required for robustness)
-    const double ND_SC_DIST_THRES = 0.9; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
+    const double ND_SC_DIST_THRES = 100; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
 
     // config 
@@ -162,18 +173,32 @@ public:
 
     //data
     std::vector<double> polarcontexts_timestamp_; // optional.
-    std::vector<Eigen::MatrixXd> polarcontexts_;
+    std::vector<Eigen::MatrixXd> database_polarcontexts_;
+    std::vector<Eigen::MatrixXd> inquiry_polarcontexts_;
     std::vector<Eigen::MatrixXd> polarcontext_invkeys_;
     std::vector<Eigen::MatrixXd> polarcontext_vkeys_;
     std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
     std::vector<std::pair<int,double>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
 
-    KeyMat polarcontext_invkeys_mat_;   //float的容器的容器
+    KeyMat database_polarcontext_invkeys_mat_;   //float的容器的容器
+    KeyMat inquiry_polarcontext_invkeys_mat_;   //float的容器的容器
     KeyMat polarcontext_invkeys_to_search_;
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
 
     std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
+    std::vector<std::vector<Eigen::Vector3d> > cloud_feature_set;   //各帧点云的特征点集
+
+    std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
+    std::vector<int> database_gt_id;                                        //database的对应真值id
 
     std::vector<Eigen::Matrix4d> pose_ground_truth_copy;
     int cur_frame_id,can_frame_id;
+
+//transform matrix
+    std::vector<Eigen::Matrix4d> transform_matrix;
+    std::vector<float> yaw_shift;
+
+
+//evaluate
+    Evaluate evaluate_data;
 };

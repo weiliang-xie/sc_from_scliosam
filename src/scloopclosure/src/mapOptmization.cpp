@@ -229,8 +229,8 @@ public:
     //xwl 修改添加
     string data_set_sq = "00";
     int data_set_frame_num = 4541;
-    int16_t laser_cloud_frame_number;   //实时更新的当前帧id
-    int gt_frame_index;                //gt的序号值
+    int16_t laser_cloud_frame_number;   //实时更新的当前帧序号，在原始的数据bag包中 = 帧id
+    int16_t eld_laser_cloud_frame_number;   //实时更新的当前帧id（转换后） 用于真值数据bag包
     Eigen::MatrixXd sc_pose_origin;
     Eigen::MatrixXd sc_pose_change;
     std::vector<Eigen::Matrix4d> pose_ground_truth;
@@ -323,8 +323,7 @@ public:
         // pgVertexSaveStream = std::fstream(savePCDDirectory + "singlesession_vertex.g2o", std::fstream::out);
         // pgEdgeSaveStream = std::fstream(savePCDDirectory + "singlesession_edge.g2o", std::fstream::out);
 
-        // laser_cloud_frame_number = -1;
-        gt_frame_index = -1;
+        laser_cloud_frame_number = -1;
 
         getposegroundtruth();   //获取序列的pose真值
         getloopclosuregt();     //获取回环真值
@@ -986,14 +985,18 @@ public:
                 pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
                 pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *_rawcloud); 
                 //eloid部分数据库制作
-                elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
+                // elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
                 //SC部分数据库制作
-                scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
+                // scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
+                //ND数据库制作
+                ndManager.NDmakeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);
 
             }
   
         }
-        cout << "[ALL]  finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
+        cout << "[ELD]  finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
+        cout << "[SC]  finish making feature data base" << "  num of feature frame is: " << scManager.database_polarcontext_invkeys_mat_.size() << endl;
+        cout << "[ND]  finish making feature data base" << "  num of feature frame is: " << ndManager.database_polarcontext_invkeys_mat_.size() << endl;
  
         //体素分割效果测试数据保存
         // string error_file1 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_num.csv";
@@ -1034,7 +1037,7 @@ public:
 
 
     // void laserCloudInfoHandler(const lio_sam::cloud_infoConstPtr& msgIn)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
-    void laserCloudInfoHandler(const sensor_msgs::PointCloud2ConstPtr& msg)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
+    void  laserCloudInfoHandler(const sensor_msgs::PointCloud2ConstPtr& msg)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
     {
         // cout << "xwl receive point cloud data" << endl;
         // extract time stamp
@@ -1046,8 +1049,8 @@ public:
         //TODO 需要提取消息中的点云数据
         pcl::fromROSMsg(*msg, *laserCloudRaw); // giseop    //*将接收到的点云转换成laserCloudRaw
         laserCloudRawTime = cloudinfo_new.header.stamp.toSec(); // giseop save node time
-        gt_frame_index++;
-        laser_cloud_frame_number = loopclosure_gt_index[gt_frame_index].first;
+        laser_cloud_frame_number++;
+        eld_laser_cloud_frame_number = loopclosure_gt_index[laser_cloud_frame_number].first;
         // cout << "xwl receive time is " << laserCloudRawTime << "    frame number is " << laser_cloud_frame_number << endl;
 
         // static tf    发布odom坐标系
@@ -1072,21 +1075,21 @@ public:
             
             // downsampleCurrentScan();    //降采样处理
 
-            SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
+            // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
-            // NDsaveKeyFramesAndFactor();     //制作ND描述符
+            NDsaveKeyFramesAndFactor();     //制作ND描述符
 
             // MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
-            SaveFrameEllipsoidDescriptor();      //制作eloid描述符
+            // SaveFrameEllipsoidDescriptor();      //制作eloid描述符
 
-            performSCLoopClosure();      //求解SC回环状态
+            // performSCLoopClosure();      //求解SC回环状态
 
-            // NDperformSCLoopClosure();      //求解ND回环状态
+            NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 
-            EloidperformLoopClosure();           //求解eloid的回环状态
+            // EloidperformLoopClosure();           //求解eloid的回环状态
 
             publishFrames();             //发布路径
 
@@ -1224,10 +1227,10 @@ public:
         if( loopKeyPre == -1 /* No loop found */)
             return;
 
-        scManager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
+        scManager.evaluate_data.inquiry_id.push_back(eld_laser_cloud_frame_number);
         scManager.evaluate_data.loop_id.push_back(scManager.database_gt_id[detectResult.first]);
 
-        if(gt_frame_index == 800)       //因为bag包内只有801帧，所以先设置为800
+        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
         {
             double precise = EvaluateLoopFramePrecise(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
 
@@ -1344,11 +1347,41 @@ public:
         // cout << "   xwl enter perform sc loop closure" << endl;
 
         auto detectResult = ndManager.NDdetectLoopClosureID(); // first: nn index, second: yaw diff 
-        int loopKeyCur = laser_cloud_frame_number;          //获取当前获取的实时帧id
+        // int loopKeyCur = laser_cloud_frame_number;          //获取当前获取的实时帧id
         int loopKeyPre = detectResult.first;                //获取存在回环的历史帧的id 若不存在则返回-1
         float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
         if( loopKeyPre == -1 /* No loop found */)
             return;
+
+        ndManager.evaluate_data.inquiry_id.push_back(eld_laser_cloud_frame_number);
+        ndManager.evaluate_data.loop_id.push_back(ndManager.database_gt_id[detectResult.first]);
+        ndManager.yaw_shift.push_back(yawDiffRad);   
+
+        //求真值yaw
+        Eigen::Matrix4f gt_inquiry_rotate_matrix = pose_ground_truth[eld_laser_cloud_frame_number].cast<float>();
+        Eigen::Matrix4f gt_loop_rotate_matrix = pose_ground_truth[ndManager.database_gt_id[detectResult.first]].cast<float>();
+        vector<float> gt_inquiry_eular = computeEularAngles(gt_inquiry_rotate_matrix, 0);
+        vector<float> gt_loop_eular = computeEularAngles(gt_loop_rotate_matrix, 0);
+        double gt_raw = gt_loop_eular[2] - gt_inquiry_eular[2];
+        if(gt_raw < 0)
+            gt_raw += 360;
+        // ndManager.yaw_shift.push_back(gt_raw);   
+        
+
+        //获取转移矩阵
+        Eigen::Matrix4d transform_matrix_ = ndManager.NDGetTransformMatrixwithSVD(ndManager.cloud_feature_set.back(), ndManager.cloud_feature_set[loopKeyPre], ((int) gt_raw / ndManager.ND_PC_UNIT_SECTORANGLE) + 1);
+        ndManager.transform_matrix.push_back(transform_matrix_);
+
+        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
+        {
+            double precise = EvaluateLoopFramePrecise(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id);
+            cout << "[ND]  Normal Distribute Perform Loop Closure    id current ratio: " << precise << endl;
+
+            //位姿评价
+            EvaluateTransformError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.transform_matrix);
+            EvaluateAlignShiftError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.yaw_shift);
+        }
+
 
     }
 
@@ -1369,6 +1402,34 @@ public:
 
         // std::cout << "[MIX] SC loop found! between " << laser_cloud_frame_number << " and " << loopKeyPre << "." << std::endl; // giseop
     }
+
+    void EloidperformLoopClosure()
+    {
+        //获取真实的帧id
+        
+
+        std::pair<int, float> detectResult = elmanager.Localization(eld_laser_cloud_frame_number);
+        elmanager.evaluate_data.inquiry_id.push_back(eld_laser_cloud_frame_number);
+        elmanager.evaluate_data.loop_id.push_back(elmanager.database_gt_id[detectResult.first]);
+        
+        //获取转移矩阵
+        Eigen::Matrix4d transform_matrix_ = elmanager.MakeFeaturePointandGetTransformMatirx(elmanager.database_frame_eloid[detectResult.first], elmanager.inquiry_frame_eloid.back());
+        elmanager.transform_matrix.push_back(transform_matrix_);
+
+        //hash + kd tree 测试
+        // elmanager.database_vertical_invkeys_mat_after_hashfliter_.clear();
+        // elmanager.after_database_gt_id.clear();
+
+        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
+        {
+            double precise = EvaluateLoopFramePrecise(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id);
+            cout << "[EL]  Eloid Perform Loop Closure    id current ratio: " << precise << endl;
+
+            //位姿评价
+            EvaluateTransformError(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id, elmanager.transform_matrix);
+        }
+
+    } 
 
 
     //位置识别准确率计算 通用函数 返回准确率
@@ -1420,7 +1481,7 @@ public:
         return loop_true_num / loop_num;
     }
 
-        //位置识别准确率计算 通用函数 返回准确率
+    //转移矩阵误差评价 通用函数  传入查询id 对应的位置识别id 还有两个id之间的转移矩阵
     void EvaluateTransformError(vector<int> inquiry_id, vector<int> loop_id, std::vector<Eigen::Matrix4d> transform_matrix)
     {
         //id与真值对比
@@ -1445,6 +1506,7 @@ public:
                     gt_true_id = gt_it.second;
                 }
             }
+            std::pair<double, double> pose_error_ = {0,0};
 
             if(loop_enable == 1)
             {
@@ -1456,50 +1518,99 @@ public:
                     Eigen::Matrix4d inquiry_transform_matrix_ = transform_matrix[i] * pose_ground_truth[loop_id[i]];
                     // cout << endl << "inquiry id: " << inquiry_id[i] << " loop id: " << loop_id[i] << endl;
                     // cout << "loop translate: " << pose_ground_truth[loop_id[i]].col(3).transpose() << endl;
-                    std::pair<double, double> pose_error_;
                     pose_error_ = elmanager.EvaluateTransformMatrixWithTERE(pose_ground_truth[inquiry_id[i]], inquiry_transform_matrix_);
                     cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate: " << pose_error_.first << " rotate: " << pose_error_.second << endl;
                     trans_errors.push_back(pose_error_);
                     
+                }else{
+                    trans_errors.push_back(pose_error_);
                 }
+            }else{
+                trans_errors.push_back(pose_error_);
             }
         }
 
         //保存误差数据
-        string name_translate_error = "translate_error";
+        string name_translate_error = "translate_error";    
         string name_rotate_error = "rotate_error";
-        string error_file = savePCDDirectory + "ELD/others/eld_kitti_" + data_set_sq + "_transform_error.csv";
+        string error_file = savePCDDirectory + "ND/others/nd_kitti_" + data_set_sq + "_transform_error.csv";
         savedata(error_file, name_translate_error, name_rotate_error,trans_errors);
     }
 
-
-    void EloidperformLoopClosure()
+    //评价旋转对齐角 传入查询id 对应的位置识别id 还有旋转量
+    void EvaluateAlignShiftError(vector<int> inquiry_id, vector<int> loop_id, vector<float> yaw_shift)
     {
-        //获取真实的帧id
-        
+        vector<float> yaw_error;
+        //id与真值对比
+        int gt_range_dist = 10; //判断为准确的距离
+        std::vector<std::pair<double, double>> trans_errors;
+        if(inquiry_id.size() != loop_id.size())
+            return;
 
-        std::pair<int, float> detectResult = elmanager.Localization(laser_cloud_frame_number);
-        elmanager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
-        elmanager.evaluate_data.loop_id.push_back(elmanager.database_gt_id[detectResult.first]);
-        
-        //获取转移矩阵
-        Eigen::Matrix4d transform_matrix_ = elmanager.MakeFeaturePointandGetTransformMatirx(elmanager.database_frame_eloid[detectResult.first], elmanager.inquiry_frame_eloid.back());
-        elmanager.transform_matrix.push_back(transform_matrix_);
-
-        //hash + kd tree 测试
-        // elmanager.database_vertical_invkeys_mat_after_hashfliter_.clear();
-        // elmanager.after_database_gt_id.clear();
-
-        if(gt_frame_index == 800)       //因为bag包内只有801帧，所以先设置为800
+        for(int i = 0; i < loop_id.size(); i++)
         {
-            double precise = EvaluateLoopFramePrecise(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id);
-            cout << "[EL]  Eloid Perform Loop Closure    id current ratio: " << precise << endl;
+            int loop_enable = 0;
+            int loop_true  = 0;
+            int gt_true_id = -1;
 
-            //位姿评价
-            EvaluateTransformError(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id, elmanager.transform_matrix);
+            //遍历寻找是否为真值
+            for(auto gt_it : loopclosure_gt_index)
+            {
+                //判断是是否为loop真值
+                if(gt_it.first == inquiry_id[i]){
+                    loop_enable = 1;
+                    gt_true_id = gt_it.second;
+                }
+            }
+
+            if(loop_enable == 1)
+            {
+                Eigen::Vector4d translate = pose_ground_truth[loop_id[i]].col(3) - pose_ground_truth[gt_true_id].col(3);
+                double dist = translate.norm();
+
+                if(dist < gt_range_dist)                                                                                //使用距离值判断
+                {
+                    // Eigen::Matrix3d gt_rotate_matrix = pose_ground_truth[inquiry_id[i]].block(0,0,3,3);
+                    // Eigen::Matrix3d measure_rotate_matrix = pose_ground_truth[loop_id[i]].block(0,0,3,3);
+                    // //旋转矩阵求角度差
+                    // //0 < rotate_deg < 180
+                    // float rotate_deg = abs(acos(((gt_rotate_matrix.inverse() * measure_rotate_matrix).trace() - 1) / 2));
+                    // rotate_deg = rotate_deg * 180 / 3.1415926;
+
+                    //求真值yaw
+                    Eigen::Matrix4f gt_inquiry_rotate_matrix = pose_ground_truth[inquiry_id[i]].cast<float>();
+                    Eigen::Matrix4f gt_loop_rotate_matrix = pose_ground_truth[loop_id[i]].cast<float>();
+                    vector<float> gt_inquiry_eular = computeEularAngles(gt_inquiry_rotate_matrix, 0);
+                    vector<float> gt_loop_eular = computeEularAngles(gt_loop_rotate_matrix, 0);
+                    double rotate_deg = gt_loop_eular[2] - gt_inquiry_eular[2];
+
+                    // //yaw转换为 -180~180
+                    // double yaw_shift_ = 0;
+                    // if(yaw_shift[i] < 180)
+                    //     yaw_shift_ = yaw_shift[i];
+                    // else
+                    //     yaw_shift_ = yaw_shift[i] - 360;
+                    float yaw_error_ = abs(rotate_deg - yaw_shift[i]);
+                    //求最小差角
+                    if(yaw_error_ > 180)
+                        yaw_error_ = 360 - yaw_error_;
+
+                    yaw_error.push_back(yaw_error_);
+                } else{
+                    yaw_error.push_back(0); 
+                }
+            }else{
+                yaw_error.push_back(0);
+            }    
         }
+        cout << "[ND]   yaw error: " << endl;
+        for(auto error : yaw_error)
+        {
+            cout << error << endl;
+        }cout << endl;
+    }
+ 
 
-    } 
 
     void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum)
     {
@@ -1605,8 +1716,8 @@ public:
             // std::cout << "xwl make and save scan context and keys" << std::endl;
             pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
             pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云
-            scManager.makeAndSaveInquiryScancontextAndKeys(*thisRawCloudKeyFrame, laser_cloud_frame_number);    //使用点云进行描述符制作
-            scManager.context_origin_index.push_back(laser_cloud_frame_number);          //保存原始点云帧序号
+            scManager.makeAndSaveInquiryScancontextAndKeys(*thisRawCloudKeyFrame, eld_laser_cloud_frame_number);    //使用点云进行描述符制作
+            scManager.context_origin_index.push_back(eld_laser_cloud_frame_number);          //保存原始点云帧序号
         }  
 
         // save sc data
@@ -1634,31 +1745,31 @@ public:
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
 
-        // std::cout << "[ND] make and save ND scan context and keys" << std::endl;
+        std::cout << "[ND] make and save ND scan context and keys" << std::endl;
 
         pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云
-        ndManager.NDmakeAndSaveScancontextAndKeys(*thisRawCloudKeyFrame);    //使用点云进行描述符制作
+        ndManager.NDmakeAndSaveInquiryScancontextAndKeys(*thisRawCloudKeyFrame, eld_laser_cloud_frame_number);    //使用点云进行描述符制作
         ndManager.context_origin_index.push_back(laser_cloud_frame_number);          //保存原始点云帧序号
 
         // save sc data
-        const auto& curr_scd = ndManager.NDgetConstRefRecentSCD();    //获取当前的SC描述矩阵
-        std::string curr_scd_node_idx = padZeros(ndManager.polarcontexts_.size() - 1);  //记下当前矩阵序号（string） 用于保存文件的命名
+        // const auto& curr_scd = ndManager.NDgetConstRefRecentSCD();    //获取当前的SC描述矩阵
+        // std::string curr_scd_node_idx = padZeros(ndManager.inquiry_polarcontexts_.size() - 1);  //记下当前矩阵序号（string） 用于保存文件的命名
 
-        saveSCD(NDsaveSCDDirectory + curr_scd_node_idx + ".scd", curr_scd);   //命名并保存矩阵
+        // saveSCD(NDsaveSCDDirectory + curr_scd_node_idx + ".scd", curr_scd);   //命名并保存矩阵
 
 
         // save keyframe cloud as file giseop
-        bool saveRawCloud { true }; //这里是选择保存哪种类型的点云
-        pcl::PointCloud<PointType>::Ptr thisKeyFrameCloud(new pcl::PointCloud<PointType>());
-        if(saveRawCloud) { 
-            *thisKeyFrameCloud += *laserCloudRaw;
-        } else {
-            // *thisKeyFrameCloud += *thisCornerKeyFrame;
-            // *thisKeyFrameCloud += *thisSurfKeyFrame;
-        }
-        pcl::io::savePCDFileBinary(NDsaveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
-        pgTimeSaveStream << laserCloudRawTime << std::endl;        
+        // bool saveRawCloud { true }; //这里是选择保存哪种类型的点云
+        // pcl::PointCloud<PointType>::Ptr thisKeyFrameCloud(new pcl::PointCloud<PointType>());
+        // if(saveRawCloud) { 
+        //     *thisKeyFrameCloud += *laserCloudRaw;
+        // } else {
+        //     // *thisKeyFrameCloud += *thisCornerKeyFrame;
+        //     // *thisKeyFrameCloud += *thisSurfKeyFrame;
+        // }
+        // pcl::io::savePCDFileBinary(NDsaveNodePCDDirectory + curr_scd_node_idx + ".pcd", *thisKeyFrameCloud);
+        // pgTimeSaveStream << laserCloudRawTime << std::endl;        
     }
 
     void MIXsaveKeyFramesAndFactor()     //MIX描述符制作
@@ -1698,11 +1809,11 @@ public:
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
 
-        // std::cout << "[EL] make and save scan context and keys" << std::endl;
+        std::cout << "[EL] make and save scan context and keys" << std::endl;
 
         pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);                                //复制点云
-        elmanager.MakeInquiryEllipsoidDescriptor(*thisRawCloudKeyFrame, laser_cloud_frame_number);                                   //使用点云进行描述符制作       
+        elmanager.MakeInquiryEllipsoidDescriptor(*thisRawCloudKeyFrame, eld_laser_cloud_frame_number);                                   //使用点云进行描述符制作       
 
     }
 

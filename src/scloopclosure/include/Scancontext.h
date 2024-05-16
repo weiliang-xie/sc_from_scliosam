@@ -119,7 +119,7 @@ public:
     KeyMat polarcontext_invkeys_to_search_;
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
 
-    std::vector<int> inquiry_gt_id;                                        //database的对应真值id
+    std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
     std::vector<int> database_gt_id;                                        //database的对应真值id
 
 //evaluate

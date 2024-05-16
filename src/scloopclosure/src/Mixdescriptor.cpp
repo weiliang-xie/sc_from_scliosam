@@ -227,8 +227,6 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
 
     // cout << "enter descriptor detect" << endl;
 
-    // auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    // auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
 
 
     if( (int)polarcontext_invkeys_mat_ca.size() < MIX_NUM_EXCLUDE_RECENT + 1 ) //储存的描述符数量是否足够

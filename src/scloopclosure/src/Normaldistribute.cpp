@@ -13,8 +13,10 @@
 using namespace std;
 
 void ClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::MatrixXd axis_all, Eigen::Vector3d center, int index);
+extern Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
 
-void NDManager::NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud)
+
+void NDManager::NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
 {
     // cout << "[ND] make descriptor matrix and key" << endl;
     Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
@@ -22,10 +24,25 @@ void NDManager::NDmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> & _
     Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
-    polarcontexts_.push_back( sc );     //保存描述矩阵
+    inquiry_polarcontexts_.push_back( sc );     //保存描述矩阵
+    inquiry_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值 
+    inquiry_gt_id.push_back(frame_id); 
+    
+}
+
+void NDManager::NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
+{
+    // cout << "[ND] make descriptor matrix and key" << endl;
+    Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
+    Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
+    Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
+    std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
+
+    database_polarcontexts_.push_back( sc );     //保存描述矩阵
     polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
     polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
-    polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值  
+    database_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值  
+    database_gt_id.push_back(frame_id);
     
 }
 
@@ -95,7 +112,8 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
                 bin_eloid.center.x = bin_mean_cov_.first(0,0);
                 bin_eloid.center.y = bin_mean_cov_.first(0,1);
                 bin_eloid.center.z = bin_mean_cov_.first(0,2);
-                bin_eloid.cov = bin_mean_cov_.second;
+                bin_eloid.cov = bin_mean_cov_.second;\
+                bin_eloid.num = bin_it.size();
 
                 bin_eigen_ = NDGetEigenvalues(bin_eloid.cov);
                 bin_eloid.axis_length = bin_eigen_.first;
@@ -145,10 +163,12 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
         }
     }
+    std::vector<Eigen::Vector3d> feature_p_ = NDGetFeaturePoint(cloud_voxel_eloid_);
+    cloud_feature_set.push_back(feature_p_);
 
     //传入序列 储存当帧点云体素椭球
     cloud_voxel_eloid.push_back(cloud_voxel_eloid_);
-    NDSaveVoxelellipsoidData(cloud_voxel_eloid_, cloud_voxel_eloid.size()-1); // 保存当帧体素椭球数据
+    // NDSaveVoxelellipsoidData(cloud_voxel_eloid_, cloud_voxel_eloid.size()-1); // 保存当帧体素椭球数据
 
     //将无点的网格描述值 = 0
     for ( int row_idx = 0; row_idx < desc.rows(); row_idx++ )
@@ -195,45 +215,44 @@ MatrixXd NDManager::NDmakeSectorkeyFromScancontext( Eigen::MatrixXd &_desc )
     return variant_key;
 } // NDManager::makeSectorkeyFromScancontext
 
+//返回database index 并非真实帧id
 std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 {
     int loop_id { -1 }; // init with -1, -1 means no loop (== LeGO-LOAM's variable "closestHistoryFrameID")
 
     // cout << "enter descriptor detect" << endl;
 
-    // auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    // auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
-
     /* 
      * step 1: candidates from ringkey tree_
      */
-    if( (int)polarcontext_invkeys_mat_.size() < ND_NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
+    if( (int)database_polarcontext_invkeys_mat_.size() < ND_NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
     {
         std::pair<int, float> result {loop_id, 0.0};
-        // cout << "[ND] descriptor number is not enough" << endl;
+        cout << "[ND] descriptor number is not enough" << endl;
         return result; // Early return 
     }
 
-    auto curr_key = polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
-    auto curr_desc = polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
+    auto curr_key = inquiry_polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
+    auto curr_desc = inquiry_polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
     auto curr_veloid = cloud_voxel_eloid.back();                                        //取出体素椭球序列,最近的
 
 
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
-    if( tree_making_period_conter % TREE_MAKING_PERIOD_ == 0) // to save computation cost
+    if( tree_making_period_conter  == 0) // to save computation cost
     {
         TicToc t_tree_construction;
 
         polarcontext_invkeys_to_search_.clear();
-        polarcontext_invkeys_to_search_.assign( polarcontext_invkeys_mat_.begin(), polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
+        polarcontext_invkeys_to_search_.assign( database_polarcontext_invkeys_mat_.begin(), database_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
 
         //复位polarcontext_tree_指针，并开辟一段动态内存用于存放 同时构造出来的KDTreeVectorOfVectorsAdaptor类
         polarcontext_tree_.reset(); 
         polarcontext_tree_ = std::make_unique<InvKeyTree>(ND_PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
         t_tree_construction.toc("Tree construction");
+
+        tree_making_period_conter = tree_making_period_conter + 1;
     }
-    tree_making_period_conter = tree_making_period_conter + 1;
         
     double min_dist = 10000000; // init with somthing large
     int nn_align = 0;
@@ -255,12 +274,12 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     TicToc t_calc_dist;   
     for ( int candidate_iter_idx = 0; candidate_iter_idx < ND_NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
-        MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
+        MatrixXd polarcontext_candidate = database_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
         std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
-        // std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
-        cur_frame_id = polarcontexts_.size() - 1;
-        can_frame_id = candidate_indexes[candidate_iter_idx];
-        std::pair<double, int> sc_dist_result = NDdistancevoxeleloid(curr_desc, polarcontext_candidate, curr_veloid, voxel_eloid_candidate);
+        std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
+        // cur_frame_id = polarcontexts_.size() - 1;
+        // can_frame_id = candidate_indexes[candidate_iter_idx];
+        // std::pair<double, int> sc_dist_result = NDdistancevoxeleloid(curr_desc, polarcontext_candidate, curr_veloid, voxel_eloid_candidate);
         double candidate_dist = sc_dist_result.first;
         int candidate_align = sc_dist_result.second;
 
@@ -275,26 +294,17 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     t_calc_dist.toc("Distance calc");
 
     //储存回环帧的id和相似度距离
-    std::pair<int,float> data{(polarcontexts_.size()-1),min_dist};
+    std::pair<int,float> data{(inquiry_gt_id.back()),min_dist};      
     loopclosure_id_and_dist.push_back(data);
 
     /* 
      * loop threshold check
      */
-    if( min_dist < ND_SC_DIST_THRES )  //是否达到回环阈值判断
-    {
-        loop_id = nn_idx; 
-        
-        std::cout.precision(3); 
-        cout << "[ND]  [Loop found] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[ND]  [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
-    }
-    else
-    {
-        std::cout.precision(3); 
-        cout << "[ND]  [Not loop] Nearest distance: " << min_dist << " btn " << polarcontexts_.size()-1 << " and " << nn_idx << "." << endl;
-        cout << "[ND]  [Not loop] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
-    }
+    loop_id = nn_idx; 
+    
+    std::cout.precision(3); 
+    cout << "[ND]  [Loop found] Nearest distance: " << min_dist << " btn " << inquiry_gt_id.back() << " and " << database_gt_id[nn_idx] << "." << endl;
+    // cout << "[ND]  [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
 
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * ND_PC_UNIT_SECTORANGLE);
@@ -316,14 +326,16 @@ double NDManager::NDdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
         if( (col_sc1.norm() == 0) | (col_sc2.norm() == 0) )
             continue; // don't count this sector pair. 
 
-        double sector_similarity = col_sc1.dot(col_sc2) / (col_sc1.norm() * col_sc2.norm());
+        // double sector_similarity = col_sc1.dot(col_sc2) / (col_sc1.norm() * col_sc2.norm());
+        double sector_similarity = (col_sc1 - col_sc2).norm();
 
         sum_sector_similarity = sum_sector_similarity + sector_similarity;
         num_eff_cols = num_eff_cols + 1;
     }
     
     double sc_sim = sum_sector_similarity / num_eff_cols;
-    return 1.0 - sc_sim;
+    // return 1.0 - sc_sim;
+    return sc_sim;
 
 } // distDirectSC
 
@@ -350,7 +362,7 @@ int NDManager::NDfastAlignUsingVkey( MatrixXd & _vkey1, MatrixXd & _vkey2)
 
 } // fastAlignUsingVkey
 
-
+//SC原版列位移匹配函数
 std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, MatrixXd &_sc2 )
 {
     // 1. fast align using variant key (not in original IROS18)
@@ -387,7 +399,7 @@ std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, Matr
 
 const Eigen::MatrixXd& NDManager::NDgetConstRefRecentSCD(void)
 {
-    return polarcontexts_.back();
+    return database_polarcontexts_.back();
 }
 
 
@@ -516,7 +528,7 @@ std::pair<std::vector<double>,Eigen::MatrixXd> NDManager::NDGetEigenvalues(Eigen
 //模型有效条件：点云数量大于20 
 bool NDManager::NDFilterVoxelellipsoid(class Voxel_Ellipsoid &voxeleloid)
 {
-    if(voxeleloid.point_num > 20)
+    if(voxeleloid.point_num > 10)
     {
         voxeleloid.valid = 1;
         double a = sqrt(voxeleloid.axis_length[0]);
@@ -602,7 +614,7 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
 
     //计算转移矩阵
     Eigen::Matrix4d transform;
-    transform = GetTransformMatrix(num_shift_col,translat);
+    transform = GetTransformMatrixCombine(num_shift_col,translat);
 
     // 直接使用真值
     // transform = pose_ground_truth_copy[cur_frame_id] * pose_ground_truth_copy[can_frame_id].inverse();
@@ -1340,7 +1352,7 @@ int NDManager::NDGetringshift(Eigen::Vector3d translation)
 }
 
 //转移矩阵组装
-Eigen::Matrix4d NDManager::GetTransformMatrix(int col_num_shift,Eigen::Vector3d translation)
+Eigen::Matrix4d NDManager::GetTransformMatrixCombine(int col_num_shift,Eigen::Vector3d translation)
 {
     //实际上是是将绕z轴旋转和平移组装到一起
     double yaw = deg2rad((float)(360 - col_num_shift * ND_PC_UNIT_SECTORANGLE));     //这里的转移矩阵旋转角与列偏移角的和是360度
@@ -1412,6 +1424,73 @@ std::pair<double, int> NDManager::NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd
     return make_pair(min_sc_dist, argmin_shift);
 
 } // distanceBtnScanContext
+
+/*---------------------------------------------------------------------------SVD分解获取转移矩阵---------------------------------------------------------------------------*/
+//svd分解 转移矩阵获取
+Eigen::Matrix4d NDManager::NDGetTransformMatrixwithSVD(std::vector<Eigen::Vector3d> inquiry_feature_p, std::vector<Eigen::Vector3d> match_feature_p, int align_num)
+{
+    //svd分解转移矩阵
+
+    //获取偏移点集
+    std::vector<Eigen::Vector3d> aligned_inquiry_feature_p = NDAlignFeaturePoint(inquiry_feature_p, align_num);
+
+    //获取转移矩阵
+    return GetTransformMatrix(match_feature_p,aligned_inquiry_feature_p);
+}
+
+//获取特征点集 输入单帧点云的各个体素模型 输出点云的特征点集
+std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid)
+{
+    std::vector<Eigen::Vector3d> feature_point(ND_PC_NUM_SECTOR, {0,0,-10});
+    for(int i = 0; i < frame_eloid.size(); i++)
+    {
+        //过滤无用体素模型
+        if(frame_eloid[i].num >= 100)
+            continue;
+        int sector_index = i % ND_PC_NUM_SECTOR;
+        Eigen::Vector3d center = {frame_eloid[i].center.x, frame_eloid[i].center.y, frame_eloid[i].center.z};
+
+        if(center[2] > feature_point[sector_index][2])
+        {
+            feature_point[sector_index] = center;
+        }
+    }
+
+    //去除未被赋值的特征点集
+    for(auto feature_p : feature_point)
+    {
+        if(feature_p[2] == -10)
+        {
+            feature_p = {0,0,0};
+        }
+    }
+
+    //打印特征点集
+    // cout << "NDGetFeaturePoint   make feature point: " << endl;
+    // for(auto feature_p : feature_point)
+    // {
+    //     cout << feature_p.transpose() << ","; 
+    // }cout << endl;
+
+    return feature_point;
+}
+
+//偏移对齐特征点集
+std::vector<Eigen::Vector3d> NDManager::NDAlignFeaturePoint(std::vector<Eigen::Vector3d> feature_point, int align_scetor)
+{
+    std::cout << "[ND] align feature point set" << std::endl;
+
+    std::vector<Eigen::Vector3d> aligned_feature_p(ND_PC_NUM_SECTOR);
+    for(int i = 0; i < feature_point.size(); i++)
+    {
+        // aligned_feature_p[(i+align_scetor) % ND_PC_NUM_SECTOR] = feature_point[i];
+        aligned_feature_p[(i+(ND_PC_NUM_SECTOR - align_scetor)) % ND_PC_NUM_SECTOR] = feature_point[i];
+    }
+
+    return aligned_feature_p;
+}
+
+/*---------------------------------------------------------------------------功能函数---------------------------------------------------------------------------*/
 
 
 

@@ -478,6 +478,18 @@ Eigen::Matrix4d EllipsoidLocalization::MakeFeaturePointandGetTransformMatirx(Fra
 
 Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1, std::vector<Eigen::Vector3d> feature_point_2)
 {
+    //打印特征点集
+    // cout << "GetFeaturePoint_1   make feature point: " << endl;
+    // for(auto feature_p : feature_point_1)
+    // {
+    //     cout << feature_p.transpose() << ","; 
+    // }cout << endl;
+    // cout << "GetFeaturePoint_2   make feature point: " << endl;
+    // for(auto feature_p : feature_point_2)
+    // {
+    //     cout << feature_p.transpose() << ","; 
+    // }cout << endl;
+
     //判断特征点数量
     int point_num_;
     if(feature_point_1.size() != feature_point_2.size())
@@ -500,8 +512,8 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
     }
     feature_point_1_mean_ /= point_num_;
     feature_point_2_mean_ /= point_num_;
-    cout << "feature point 1 mean: " << feature_point_1_mean_.transpose() << endl;
-    cout << "feature point 2 mean: " << feature_point_2_mean_.transpose() << endl;
+    // cout << "feature point 1 mean: " << feature_point_1_mean_.transpose() << endl;
+    // cout << "feature point 2 mean: " << feature_point_2_mean_.transpose() << endl;
 
     //求S = XY
     Eigen::Matrix3d S = Eigen::Matrix3d::Zero();
@@ -510,7 +522,7 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
         S += (feature_point_1[i] - feature_point_1_mean_) * (feature_point_2[i] - feature_point_2_mean_).transpose();
     }
 
-    cout << "S is: " << S << endl;
+    // cout << "S is: " << S << endl;
 
 
     //奇异值分解
@@ -519,8 +531,8 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
     Eigen::Matrix3d U = svd_matrix[0];
     Eigen::Matrix3d V = svd_matrix[1];
 
-    cout << "U is: " << U << endl;
-    cout << "V is: " << V << endl;
+    // cout << "U is: " << U << endl;
+    // cout << "V is: " << V << endl;
 
 
     //求旋转矩阵
@@ -529,11 +541,11 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
 
     Eigen::Matrix3d rotate_matrix = V * M * U.transpose();
 
-    cout << "rotate matrix is: " << rotate_matrix << endl;
+    // cout << "rotate matrix is: " << rotate_matrix << endl;
 
     Eigen::Vector3d translate_vector = feature_point_2_mean_ - rotate_matrix * feature_point_1_mean_;
 
-    cout << "translate vector is: " << translate_vector.transpose() << endl;
+    // cout << "translate vector is: " << translate_vector.transpose() << endl;
 
     //组装转移矩阵
     Eigen::Matrix4d transform_matrix = Eigen::Matrix4d::Zero();
@@ -543,7 +555,7 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
     transform_matrix(2,3) = translate_vector[2];
     transform_matrix(3,3) = 1;
 
-    cout << "transform matrix is: " << transform_matrix << endl;
+    cout << "transform matrix is: " << endl << transform_matrix << endl;
 
     return transform_matrix;
 }
@@ -637,16 +649,31 @@ std::pair<double, double> EllipsoidLocalization::EvaluateTransformMatrixWithTERE
     trans_error = (gt_trans_vector - measure_trans_vector).norm();
 
     //旋转矩阵求角度差
-    Eigen::Matrix3d gt_rotate_matrix = gt.block(0,0,3,3);
-    Eigen::Matrix3d measure_rotate_matrix = measure.block(0,0,3,3);
+    // Eigen::Matrix3d gt_rotate_matrix = gt.block(0,0,3,3);
+    // Eigen::Matrix3d measure_rotate_matrix = measure.block(0,0,3,3);
+    // // cout << "gt rotate matrix: " << gt_rotate_matrix << endl;
+    // // cout << "measure rotate matrix: " << measure_rotate_matrix << endl;
 
-    // cout << "gt rotate matrix: " << gt_rotate_matrix << endl;
-    // cout << "measure rotate matrix: " << measure_rotate_matrix << endl;
+    // rotate_error = abs(acos(((gt_rotate_matrix.inverse() * measure_rotate_matrix).trace() - 1) / 2));
 
-    rotate_error = abs(acos(((gt_rotate_matrix.inverse() * measure_rotate_matrix).trace() - 1) / 2));
+    //求真值yaw
+    Eigen::Matrix4f gt_rotate_matrix = gt.cast<float>();
+    Eigen::Matrix4f measure_rotate_matrix = measure.cast<float>();
+    vector<float> gt_eular = computeEularAngles(gt_rotate_matrix, 0);
+    vector<float> measure_eular = computeEularAngles(measure_rotate_matrix, 0);
+    cout << "gt eular: " << gt_eular[0] << "," << gt_eular[1] << "," << gt_eular[2] << endl;
+    cout << "measure eular: " << measure_eular[0] << "," << measure_eular[1] << "," << measure_eular[2] << endl;
 
-    rotate_error = rotate_error * 180 / 3.1415926;
+    for(int i = 0; i < 3; i++)
+    {
+        rotate_error += (double)((gt_eular[i] - measure_eular[i]) * (gt_eular[i] - measure_eular[i]));
+    }
+    rotate_error = sqrt(rotate_error);
+
+
+    // rotate_error = rotate_error * 180 / 3.1415926;
 
     std::pair<double, double> result = {trans_error, rotate_error};
     return result;
+    
 }

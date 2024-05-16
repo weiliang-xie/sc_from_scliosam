@@ -43,6 +43,8 @@ using SCPointType = pcl::PointXYZI; // using xyz only. but a user can exchange t
 using KeyMat = std::vector<std::vector<float> >;
 using InvKeyTree = KDTreeVectorOfVectorsAdaptor< KeyMat, float>;
 
+std::vector<float> computeEularAngles(Eigen::Matrix4f& R, bool israd);
+
 //评价数据收集
 class Evaluate
 {
