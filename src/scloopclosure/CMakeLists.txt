@@ -28,6 +28,8 @@ find_package(OpenMP REQUIRED)
 find_package(PCL REQUIRED QUIET)
 find_package(OpenCV REQUIRED QUIET)
 find_package(GTSAM REQUIRED QUIET)
+# Ceres-solver
+find_package(Ceres REQUIRED)
 
 add_message_files(
   DIRECTORY msg
@@ -63,6 +65,7 @@ include_directories(
 	${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
+  ${CERES_INCLUDE_DIRS}
 )
 
 # link directories
@@ -71,6 +74,7 @@ link_directories(
 	${PCL_LIBRARY_DIRS}
   ${OpenCV_LIBRARY_DIRS}
   ${GTSAM_LIBRARY_DIRS}
+  ${CERES_INCLUDE_DIRS}
 )
 
 ###########
@@ -99,6 +103,8 @@ add_executable(${PROJECT_NAME}_mapOptmization
 add_dependencies(${PROJECT_NAME}_mapOptmization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
 target_link_libraries(${PROJECT_NAME}_mapOptmization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} gtsam)
+# link ceres-solver
+target_link_libraries(${PROJECT_NAME}_mapOptmization ${CERES_LIBRARIES})
 
 # IMU Preintegration
 # add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp)

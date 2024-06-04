@@ -14,6 +14,7 @@ using namespace std;
 
 void ClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::MatrixXd axis_all, Eigen::Vector3d center, int index);
 extern Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
+extern Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw = 0);
 
 
 void NDManager::NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
@@ -1432,34 +1433,64 @@ Eigen::Matrix4d NDManager::NDGetTransformMatrixwithSVD(std::vector<Eigen::Vector
     //svd分解转移矩阵
 
     //获取偏移点集
-    std::vector<Eigen::Vector3d> aligned_inquiry_feature_p = NDAlignFeaturePoint(inquiry_feature_p, align_num);
+    std::vector<Eigen::Vector3d> aligned_inquiry_feature_p = NDAlignFeaturePoint(inquiry_feature_p, align_num);     //并未改变点的坐标，也无需后续进行还原旋转
 
     //获取转移矩阵
-    return GetTransformMatrix(match_feature_p,aligned_inquiry_feature_p);
+    // return GetTransformMatrix(match_feature_p,aligned_inquiry_feature_p);
+    return GetTransformMatrixwithCERE(aligned_inquiry_feature_p, match_feature_p, (double)(align_num * ND_PC_UNIT_SECTORANGLE));
+
 }
 
 //获取特征点集 输入单帧点云的各个体素模型 输出点云的特征点集
 std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid)
 {
-    std::vector<Eigen::Vector3d> feature_point(ND_PC_NUM_SECTOR, {0,0,-10});
+    std::vector<Eigen::Vector3d> feature_point_max(ND_PC_NUM_SECTOR, {0,0,-10});
+    std::vector<Eigen::Vector3d> feature_point_min(ND_PC_NUM_SECTOR, {0,0,10});
+    std::vector<Eigen::Vector3d> feature_point_max_z(ND_PC_NUM_SECTOR, {0,0,-10});
     for(int i = 0; i < frame_eloid.size(); i++)
     {
         //过滤无用体素模型
-        if(frame_eloid[i].num >= 100)
+        if(frame_eloid[i].num <= 50)
             continue;
         int sector_index = i % ND_PC_NUM_SECTOR;
-        Eigen::Vector3d center = {frame_eloid[i].center.x, frame_eloid[i].center.y, frame_eloid[i].center.z};
+        Eigen::Vector3d center = {frame_eloid[i].center.x, frame_eloid[i].center.y, frame_eloid[i].center.z};                       //提取最高中心点作为匹配点集
+        Eigen::Vector3d max_z_pt_ = {frame_eloid[i].max_h_center.x, frame_eloid[i].max_h_center.y, frame_eloid[i].max_h_center.z};  //提取最高点作为匹配点集
 
-        if(center[2] > feature_point[sector_index][2])
+        if(center[2] > feature_point_max[sector_index][2])
         {
-            feature_point[sector_index] = center;
+            feature_point_max[sector_index] = center;
         }
+
+        if(center[2] < feature_point_min[sector_index][2])
+        {
+            feature_point_min[sector_index] = center;
+        }
+        if(max_z_pt_[2] > feature_point_max_z[sector_index][2])
+        {
+            feature_point_max_z[sector_index] = max_z_pt_;
+        }
+
+
     }
 
     //去除未被赋值的特征点集
-    for(auto feature_p : feature_point)
+    for(auto feature_p : feature_point_max)
     {
         if(feature_p[2] == -10)
+        {
+            feature_p = {0,0,0};
+        }
+    }
+    for(auto feature_p : feature_point_min)
+    {
+        if(feature_p[2] == 10)
+        {
+            feature_p = {0,0,0};
+        }
+    }
+    for(auto feature_p : feature_point_max_z)
+    {
+        if(feature_p[2] == 10)
         {
             feature_p = {0,0,0};
         }
@@ -1467,10 +1498,19 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
 
     //打印特征点集
     // cout << "NDGetFeaturePoint   make feature point: " << endl;
-    // for(auto feature_p : feature_point)
+    // for(auto feature_p : feature_point_max)
     // {
     //     cout << feature_p.transpose() << ","; 
     // }cout << endl;
+
+    ////返回最高点与最低点的相对向量 
+    std::vector<Eigen::Vector3d> feature_point(ND_PC_NUM_SECTOR);
+    for(int i = 0; i < ND_PC_NUM_SECTOR; i++)
+    {
+        // feature_point[i] = feature_point_max[i] - feature_point_min[i];
+        feature_point[i] = feature_point_max[i];
+        // feature_point[i] = feature_point_max_z[i];
+    }
 
     return feature_point;
 }
@@ -1478,7 +1518,7 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
 //偏移对齐特征点集
 std::vector<Eigen::Vector3d> NDManager::NDAlignFeaturePoint(std::vector<Eigen::Vector3d> feature_point, int align_scetor)
 {
-    std::cout << "[ND] align feature point set" << std::endl;
+    // std::cout << "[ND] align feature point set" << std::endl;
 
     std::vector<Eigen::Vector3d> aligned_feature_p(ND_PC_NUM_SECTOR);
     for(int i = 0; i < feature_point.size(); i++)

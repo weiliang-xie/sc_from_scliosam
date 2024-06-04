@@ -148,7 +148,7 @@ public:
 
 public:
     const double LIDAR_HEIGHT = 2.0;                                                //雷达高度
-    const int    ND_PC_NUM_RING = 20;                                               //圆环数量 沿径向切割
+    const int    ND_PC_NUM_RING = 16;                                               //圆环数量 沿径向切割
     const int    ND_PC_NUM_SECTOR = 40;                                             //扇形数量 沿方位角切割
     const double ND_PC_MAX_RADIUS = 80.0;                                           //最大检测距离
     const double ND_PC_UNIT_SECTORANGLE = 360.0 / double(ND_PC_NUM_SECTOR);         //单元方位角角度 deg

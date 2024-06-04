@@ -29,6 +29,7 @@
 #include "tictoc.h"
 
 #include "BaseGlobalLocalization.h"
+#include <ceres/ceres.h>
 
 using namespace std;
 using namespace Eigen;
@@ -73,6 +74,27 @@ struct GetHashKey{
         return hash<int>()(k.mode) ^ hash<int>()(k.cloud_exit);
         // return hash<int>()(k.mean_qf);
     }
+};
+
+struct CostFunctor{
+    const Eigen::Matrix<double, 2, 1> source_point, cand_point;
+    //结构初始化，依次传入单个源点和单个候选点
+    CostFunctor(Eigen::Matrix<double, 2, 1> source, Eigen::Matrix<double, 2, 1> cand) : source_point(source), cand_point(cand) {}
+
+    template <typename T>
+    bool operator()(const T* const tf_para, T *residual) const {
+        const T x = tf_para[0];
+        const T y = tf_para[1];
+        const T theta = tf_para[2];
+        Eigen::Matrix<T, 2, 2> R;
+        R << cos(theta), -sin(theta), sin(theta), cos(theta);
+        Eigen::Matrix<T, 2, 1> t(x, y);
+        Eigen::Matrix<T, 2, 1> dis_pose = R * source_point + t - cand_point;
+        // residual[0] = T(abs(dis_pose[0])) + T(abs(dis_pose[1]));
+        residual[0] = T(dis_pose.norm());
+        return true;
+    }
+
 };
 
 
@@ -144,5 +166,6 @@ public:
 
     std::vector<Eigen::Vector3d> MakeFeaturePoint(Frame_Ellipsoid frame_eloid);
     Eigen::Matrix4d MakeFeaturePointandGetTransformMatirx(Frame_Ellipsoid frame_eloid_1, Frame_Ellipsoid frame_eloid_2);
-    std::pair<double, double> EvaluateTransformMatrixWithTERE(Eigen::Matrix4d gt, Eigen::Matrix4d measure);
+    Eigen::Isometry2d EvaculateTFWithIso(Eigen::Matrix4d can_gt, Eigen::Matrix4d src_gt, Eigen::Matrix4d est);
+
 };  

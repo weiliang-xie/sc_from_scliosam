@@ -657,11 +657,12 @@ public:
         elmanager.DivideVoxel(*similar_cloud);
         Frame_Ellipsoid eloid_2 = elmanager.BulidingEllipsoidModel();
 
-        Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_2, eloid_1);
+        Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_1, eloid_2);
         // Eigen::Vector3d gt_translate_center_vector = {pose_ground_truth[3304](0,3) - pose_ground_truth[2356](0,3),
         //                                                 pose_ground_truth[3304](1,3) - pose_ground_truth[2356](1,3),
         //                                                 pose_ground_truth[3304](2,3) - pose_ground_truth[2356](2,3)};
 
+        cout << "transform matrix: " << endl << transform_matrix << endl;
         cout << "gt pose: " << pose_ground_truth[3304] << endl;
 
         Eigen::Matrix4d test_loop_pose = transform_matrix * pose_ground_truth[2356];
@@ -670,8 +671,10 @@ public:
 
         cout << "loop test pose: " << test_loop_pose << endl;
 
-        std::pair<double, double> test_transform = elmanager.EvaluateTransformMatrixWithTERE(pose_ground_truth[3304], test_loop_pose);
-        cout << "pose error:  translate: " << test_transform.first << " rotate: " << test_transform.second << endl;
+        Eigen::Isometry2d est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[3304], pose_ground_truth[2356], transform_matrix);
+
+        double err_vec[3] = {est_err.translation().x(), est_err.translation().y(), std::atan2(est_err(1, 0), est_err(0, 0))};
+        printf(" Error: dx=%f, dy=%f, dtheta=%f\n", err_vec[0], err_vec[1], err_vec[2]);        
 
     }
 
@@ -1358,18 +1361,29 @@ public:
         ndManager.yaw_shift.push_back(yawDiffRad);   
 
         //求真值yaw
-        Eigen::Matrix4f gt_inquiry_rotate_matrix = pose_ground_truth[eld_laser_cloud_frame_number].cast<float>();
-        Eigen::Matrix4f gt_loop_rotate_matrix = pose_ground_truth[ndManager.database_gt_id[detectResult.first]].cast<float>();
-        vector<float> gt_inquiry_eular = computeEularAngles(gt_inquiry_rotate_matrix, 0);
-        vector<float> gt_loop_eular = computeEularAngles(gt_loop_rotate_matrix, 0);
-        double gt_raw = gt_loop_eular[2] - gt_inquiry_eular[2];
-        if(gt_raw < 0)
-            gt_raw += 360;
+        double pi = 3.14159265358979323846;
+        Eigen::Isometry3d source_gt, loop_gt;
+        source_gt.matrix() = pose_ground_truth[eld_laser_cloud_frame_number];
+        loop_gt.matrix() = pose_ground_truth[ndManager.database_gt_id[detectResult.first]];
+        Eigen::Isometry3d t_source_loop = source_gt * loop_gt.inverse(); //src = T * loop;
+        double yaw = std::atan2(t_source_loop(1, 0), t_source_loop(0, 0));
+        yaw = yaw < 0 ? yaw + 2*pi : yaw;
+        double yaw_deg = yaw * 180 / pi;
+        // Eigen::Matrix4f gt_inquiry_rotate_matrix = pose_ground_truth[eld_laser_cloud_frame_number].cast<float>();
+        // Eigen::Matrix4f gt_loop_rotate_matrix = pose_ground_truth[ndManager.database_gt_id[detectResult.first]].cast<float>();
+        // vector<float> gt_inquiry_eular = computeEularAngles(gt_inquiry_rotate_matrix, 0);
+        // vector<float> gt_loop_eular = computeEularAngles(gt_loop_rotate_matrix, 0);
+        // double gt_raw = gt_loop_eular[2] - gt_inquiry_eular[2];
+        // if(gt_raw < 0)
+        //     gt_raw += 360;
         // ndManager.yaw_shift.push_back(gt_raw);   
         
 
         //获取转移矩阵
-        Eigen::Matrix4d transform_matrix_ = ndManager.NDGetTransformMatrixwithSVD(ndManager.cloud_feature_set.back(), ndManager.cloud_feature_set[loopKeyPre], ((int) gt_raw / ndManager.ND_PC_UNIT_SECTORANGLE) + 1);
+        //真值
+        // Eigen::Matrix4d transform_matrix_ = ndManager.NDGetTransformMatrixwithSVD(ndManager.cloud_feature_set.back(), ndManager.cloud_feature_set[loopKeyPre], ((int) yaw_deg / ndManager.ND_PC_UNIT_SECTORANGLE) + 1);
+        //测试值
+        Eigen::Matrix4d transform_matrix_ = ndManager.NDGetTransformMatrixwithSVD(ndManager.cloud_feature_set.back(), ndManager.cloud_feature_set[loopKeyPre], ((int) yawDiffRad / ndManager.ND_PC_UNIT_SECTORANGLE));
         ndManager.transform_matrix.push_back(transform_matrix_);
 
         if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
@@ -1379,7 +1393,7 @@ public:
 
             //位姿评价
             EvaluateTransformError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.transform_matrix);
-            EvaluateAlignShiftError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.yaw_shift);
+            // EvaluateAlignShiftError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.yaw_shift);
         }
 
 
@@ -1487,6 +1501,7 @@ public:
         //id与真值对比
         int gt_range_dist = 10; //判断为准确的距离
         std::vector<std::pair<double, double>> trans_errors;
+        std::vector<Eigen::Isometry2d> est_tf_err;
         if(inquiry_id.size() != loop_id.size())
             return;
 
@@ -1507,6 +1522,7 @@ public:
                 }
             }
             std::pair<double, double> pose_error_ = {0,0};
+            Eigen::Isometry2d est_err = Eigen::Isometry2d::Identity();
 
             if(loop_enable == 1)
             {
@@ -1518,15 +1534,20 @@ public:
                     Eigen::Matrix4d inquiry_transform_matrix_ = transform_matrix[i] * pose_ground_truth[loop_id[i]];
                     // cout << endl << "inquiry id: " << inquiry_id[i] << " loop id: " << loop_id[i] << endl;
                     // cout << "loop translate: " << pose_ground_truth[loop_id[i]].col(3).transpose() << endl;
-                    pose_error_ = elmanager.EvaluateTransformMatrixWithTERE(pose_ground_truth[inquiry_id[i]], inquiry_transform_matrix_);
-                    cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate: " << pose_error_.first << " rotate: " << pose_error_.second << endl;
+                    est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[loop_id[i]], pose_ground_truth[inquiry_id[i]],transform_matrix[i]);
+                    cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate x: " << est_err.translation().x() << " pose error:  translate y: " << est_err.translation().y() << " rotate: " << std::atan2(est_err(1, 0), est_err(0, 0)) << endl;
+                    // cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate: " << pose_error_.first << " rotate: " << pose_error_.second << endl;
                     trans_errors.push_back(pose_error_);
+                    est_tf_err.push_back(est_err);
                     
                 }else{
                     trans_errors.push_back(pose_error_);
+                    est_tf_err.push_back(est_err);
                 }
             }else{
                 trans_errors.push_back(pose_error_);
+                est_tf_err.push_back(est_err);
+
             }
         }
 
@@ -1535,6 +1556,13 @@ public:
         string name_rotate_error = "rotate_error";
         string error_file = savePCDDirectory + "ND/others/nd_kitti_" + data_set_sq + "_transform_error.csv";
         savedata(error_file, name_translate_error, name_rotate_error,trans_errors);
+
+        //打印在终端
+        cout << "print all est error" << endl;
+        for(int i = 0; i < est_tf_err.size(); i++)
+        {
+            cout << est_tf_err[i].translation().x() << "," << est_tf_err[i].translation().y() << "," << std::atan2(est_tf_err[i](1, 0), est_tf_err[i](0, 0)) << "," << endl;
+        }
     }
 
     //评价旋转对齐角 传入查询id 对应的位置识别id 还有旋转量
@@ -1745,7 +1773,7 @@ public:
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
 
-        std::cout << "[ND] make and save ND scan context and keys" << std::endl;
+        // std::cout << "[ND] make and save ND scan context and keys" << std::endl;
 
         pcl::PointCloud<PointType>::Ptr thisRawCloudKeyFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudKeyFrame);  //复制点云

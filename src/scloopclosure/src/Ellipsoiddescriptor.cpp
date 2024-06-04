@@ -16,6 +16,8 @@ using namespace std;
 std::vector<Eigen::MatrixXd> GetSingularvalue(Eigen::MatrixXd bin_cov);
 bool feature_point_cmp(Eigen::Vector3d point1, Eigen::Vector3d point2);
 Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
+Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw = 0);
+
 
 //特征数据库描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
 void EllipsoidLocalization::MakeDatabaseEllipsoidDescriptor(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
@@ -473,7 +475,8 @@ Eigen::Matrix4d EllipsoidLocalization::MakeFeaturePointandGetTransformMatirx(Fra
     std::vector<Eigen::Vector3d> feature_point_1 = MakeFeaturePoint(frame_eloid_1);
     std::vector<Eigen::Vector3d> feature_point_2 = MakeFeaturePoint(frame_eloid_2);
 
-    return GetTransformMatrix(feature_point_1, feature_point_2);
+    // return GetTransformMatrix(feature_point_1, feature_point_2);
+    return GetTransformMatrixwithCERE(feature_point_1, feature_point_2);
 }
 
 Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1, std::vector<Eigen::Vector3d> feature_point_2)
@@ -560,6 +563,53 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
     return transform_matrix;
 }
 
+Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw)
+{
+    //使用迭代优化方法实现位姿的求解
+    double tf_para[3] = {0,0,0};
+    //这里是不是需要提供初值？
+    ceres::Problem problem;
+    for (int i = 0; i < source_feature_point.size(); i++)
+    {
+        source_feature_point[i][2] = 1;
+        cand_feature_point[i][2] = 1;
+        Eigen::Matrix<double, 2, 1> source_fp_ = source_feature_point[i].segment(0,2);
+        Eigen::Matrix<double, 2, 1> cand_fp_ = cand_feature_point[i].segment(0,2);
+        problem.AddResidualBlock(new ceres::AutoDiffCostFunction<CostFunctor, 1, 3>(new CostFunctor(source_fp_, cand_fp_)), nullptr, tf_para);
+    }
+
+
+    //配置求解器，这里有很多options的选项，自查
+    ceres::Solver::Options options;
+    // options.linear_solver_type = ceres::DENSE_QR;  //增量方程如何求解,QR分解的方法
+    options.minimizer_progress_to_stdout = false; //不输出到命令行
+    options.max_num_iterations = 30;
+
+    ceres::Solver::Summary summary; // 优化信息
+    ceres::Solve(options, &problem, &summary); // 开始优化
+
+    // cout << summary.BriefReport() << endl;
+    // cout << "[opintimize] estimated trans x y and rotate yaw = ";
+    for (auto i : tf_para)
+        cout << i << " ";
+    cout << endl;
+
+    Eigen::Isometry2d tf_est;
+    tf_est.setIdentity();
+    tf_est.rotate(tf_para[2]);
+    tf_est.pretranslate(Eigen::Matrix<double, 2, 1>(tf_para[0], tf_para[1]));
+
+    // cout << "[opintimize] isometry transform: " << endl << tf_est.matrix() << endl;
+
+    Eigen::Matrix4d tf_return = Eigen::Matrix4d::Identity();
+    tf_return.block<2,2>(0,0) = tf_est.matrix().block<2,2>(0,0);
+    tf_return.block<2,1>(0,3) = tf_est.matrix().block<2,1>(0,2);
+
+    // cout << "[opintimize] tr return matrix: " << endl << tf_return << endl;
+
+    return tf_return;
+
+}
 
 //奇异值分解 输入 协方差  输出 U V
 std::vector<Eigen::MatrixXd> GetSingularvalue(Eigen::MatrixXd bin_cov)
@@ -622,58 +672,59 @@ std::vector<Eigen::Vector3d> EllipsoidLocalization::MakeFeaturePoint(Frame_Ellip
 
     sort(max_z_center.begin(), max_z_center.end(), feature_point_cmp);
 
-    cout << "max center z:";
-    for(auto max_z : max_z_center)
-    {
-        cout << " " << max_z[2];
-    }
-    cout << endl;
+    // cout << "max center z:";
+    // for(auto max_z : max_z_center)
+    // {
+    //     cout << " " << max_z[2];
+    // }
+    // cout << endl;
 
     return max_z_center;
 }
 
 
-//转移矩阵评价函数  TE(m) RE(deg)
-std::pair<double, double> EllipsoidLocalization::EvaluateTransformMatrixWithTERE(Eigen::Matrix4d gt, Eigen::Matrix4d measure)
+//新转移矩阵评价函数 返回gt值与estimate值之间的转移矩阵
+Eigen::Isometry2d EllipsoidLocalization::EvaculateTFWithIso(Eigen::Matrix4d can_gt, Eigen::Matrix4d src_gt, Eigen::Matrix4d est)
 {
-    double trans_error,rotate_error;
+    //est处理 三维->二维
+    Eigen::Isometry2d tf_cantosrc_est2;
+    tf_cantosrc_est2.setIdentity();
+    Eigen::Vector3d z0_est(0, 0, 1);
+    Eigen::Vector3d z1_est = est.block<3, 1>(0, 2);
+    Eigen::Vector3d ax_est = z0_est.cross(z1_est).normalized();
+    double ang_est = acos(z0_est.dot(z1_est));              //求解三维旋转矩阵z列与z0之间的夹角，生成后面的旋转向量模块矩阵
+    Eigen::AngleAxisd d_rot_est(-ang_est, ax_est);          //旋转向量模块 初始化 -ang是旋转角，ax是旋转轴 用于将三维矩阵转换成二维矩阵 
 
-    // cout << "gt: " << gt << endl;
-    // cout << "measure: " << measure << endl;
+    Eigen::Matrix3d R_rectified_est = d_rot_est.matrix() * est.topLeftCorner<3, 3>();  // only top 2x2 useful 去除垂直方向上的旋转
 
-    Eigen::Vector4d gt_trans_vector = gt.col(3);
-    Eigen::Vector4d measure_trans_vector = measure.col(3);
-    // cout << "gt translate: " << gt_trans_vector.transpose() << endl;
-    // cout << "measure translate: " << measure_trans_vector.transpose() << endl;
+    tf_cantosrc_est2.rotate(std::atan2(R_rectified_est(1, 0), R_rectified_est(0, 0)));
+    tf_cantosrc_est2.pretranslate(Eigen::Vector2d(est.col(3).segment(0, 2)));  // only xy
 
-    trans_error = (gt_trans_vector - measure_trans_vector).norm();
+    // std::cout << "[evaculate]  T delta est 2d:\n" << tf_cantosrc_est2.matrix() << std::endl;  // Note T_delta is not comparable to this
 
-    //旋转矩阵求角度差
-    // Eigen::Matrix3d gt_rotate_matrix = gt.block(0,0,3,3);
-    // Eigen::Matrix3d measure_rotate_matrix = measure.block(0,0,3,3);
-    // // cout << "gt rotate matrix: " << gt_rotate_matrix << endl;
-    // // cout << "measure rotate matrix: " << measure_rotate_matrix << endl;
+    //gt处理 三维->二维
+    Eigen::Isometry3d can_gt_iso, src_gt_iso;
+    can_gt_iso.matrix() = can_gt;
+    src_gt_iso.matrix() = src_gt;
+    Eigen::Isometry2d tf_cantosrc_gt2;
+    tf_cantosrc_gt2.setIdentity();
 
-    // rotate_error = abs(acos(((gt_rotate_matrix.inverse() * measure_rotate_matrix).trace() - 1) / 2));
+    Eigen::Isometry3d tf_cantosrc_gt3 = can_gt_iso.inverse() * src_gt_iso;
+    Eigen::Vector3d z0(0, 0, 1);
+    Eigen::Vector3d z1 = tf_cantosrc_gt3.matrix().block<3, 1>(0, 2);
+    Eigen::Vector3d ax = z0.cross(z1).normalized();
+    double ang = acos(z0.dot(z1));        //求解三维旋转矩阵z列与z0之间的夹角，生成后面的旋转向量模块矩阵
+    Eigen::AngleAxisd d_rot(-ang, ax);    //旋转向量模块 初始化 -ang是旋转角，ax是旋转轴 用于将三维矩阵转换成二维矩阵
 
-    //求真值yaw
-    Eigen::Matrix4f gt_rotate_matrix = gt.cast<float>();
-    Eigen::Matrix4f measure_rotate_matrix = measure.cast<float>();
-    vector<float> gt_eular = computeEularAngles(gt_rotate_matrix, 0);
-    vector<float> measure_eular = computeEularAngles(measure_rotate_matrix, 0);
-    cout << "gt eular: " << gt_eular[0] << "," << gt_eular[1] << "," << gt_eular[2] << endl;
-    cout << "measure eular: " << measure_eular[0] << "," << measure_eular[1] << "," << measure_eular[2] << endl;
+    Eigen::Matrix3d R_rectified = d_rot.matrix() * tf_cantosrc_gt3.matrix().topLeftCorner<3, 3>();  // only top 2x2 useful 去除垂直方向上的旋转
 
-    for(int i = 0; i < 3; i++)
-    {
-        rotate_error += (double)((gt_eular[i] - measure_eular[i]) * (gt_eular[i] - measure_eular[i]));
-    }
-    rotate_error = sqrt(rotate_error);
+    tf_cantosrc_gt2.rotate(std::atan2(R_rectified(1, 0), R_rectified(0, 0)));
+    tf_cantosrc_gt2.pretranslate(Eigen::Vector2d(tf_cantosrc_gt3.translation().segment(0, 2)));  // only xy
 
+    // std::cout << "[evaculate]  T delta gt 2d:\n" << tf_cantosrc_gt2.matrix() << std::endl;  // Note T_delta is not comparable to this
 
-    // rotate_error = rotate_error * 180 / 3.1415926;
+    Eigen::Isometry2d T_gt_est = tf_cantosrc_gt2.inverse() * tf_cantosrc_est2;
+    // std::cout << "[evaculate]  T gt to est 2d:\n" << T_gt_est.matrix() << std::endl; 
 
-    std::pair<double, double> result = {trans_error, rotate_error};
-    return result;
-    
+    return T_gt_est;    //这是gt值与estimate值之间的旋转平移矩阵，越小越接近
 }
