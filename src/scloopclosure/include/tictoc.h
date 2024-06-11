@@ -9,39 +9,66 @@
 #include <cstdlib>
 #include <chrono>
 
-class TicToc
-{
+// class TicToc
+// {
+// public:
+//     TicToc()
+//     {
+//         tic();
+//     }
+
+//     TicToc( bool _disp )
+//     {
+//         disp_ = _disp;
+//         tic();
+//     }
+
+//     void tic()
+//     {
+//         start = std::chrono::system_clock::now();
+//     }
+
+//     void toc( std::string _about_task )
+//     {
+//         end = std::chrono::system_clock::now();
+//         std::chrono::duration<double> elapsed_seconds = end - start;
+//         double elapsed_ms = elapsed_seconds.count() * 1000;
+
+//         if( disp_ )
+//         {
+//           std::cout.precision(3); // 10 for sec, 3 for ms 
+//           std::cout << _about_task << ": " << elapsed_ms << " msec." << std::endl;
+//         }
+//     }
+
+// private:  
+//     std::chrono::time_point<std::chrono::system_clock> start, end;
+//     bool disp_ = false;
+// };
+
+//搬运自cc
+class TicToc {
 public:
-    TicToc()
-    {
-        tic();
-    }
+  TicToc() {
+    tic();
+  }
 
-    TicToc( bool _disp )
-    {
-        disp_ = _disp;
-        tic();
-    }
+  void tic() {
+    start = std::chrono::steady_clock::now();
+  }
 
-    void tic()
-    {
-        start = std::chrono::system_clock::now();
-    }
+  double toc() {
+    end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    return elapsed_seconds.count();
+  }
 
-    void toc( std::string _about_task )
-    {
-        end = std::chrono::system_clock::now();
-        std::chrono::duration<double> elapsed_seconds = end - start;
-        double elapsed_ms = elapsed_seconds.count() * 1000;
+  double toctic() {
+    double ret = toc();
+    tic();
+    return ret;
+  }
 
-        if( disp_ )
-        {
-          std::cout.precision(3); // 10 for sec, 3 for ms 
-          std::cout << _about_task << ": " << elapsed_ms << " msec." << std::endl;
-        }
-    }
-
-private:  
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-    bool disp_ = false;
+private:
+  std::chrono::time_point<std::chrono::steady_clock> start, end;
 };

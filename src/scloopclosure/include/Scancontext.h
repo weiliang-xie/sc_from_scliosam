@@ -124,6 +124,8 @@ public:
 
 //evaluate
     Evaluate evaluate_data;
+
+
 }; // SCManager
 
 // } // namespace SC2

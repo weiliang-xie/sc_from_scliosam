@@ -33,7 +33,7 @@ void MIXManager::MIXmakeAndSaveScancontextAndKeys(pcl::PointCloud<SCPointType> &
 
 MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
-    TicToc t_making_desc;
+    // TicToc t_making_desc;
 
     // main
     const int NO_POINT = -1000;
@@ -147,7 +147,7 @@ MatrixXd MIXManager::MIXmakeScancontext(pcl::PointCloud<SCPointType> & _scan_clo
 
     // cout << "[MIX] finish make MIX descriptor" << endl;
 
-    t_making_desc.toc("PolarContext making");
+    // t_making_desc.toc("PolarContext making");
 
     return desc;
 }
@@ -248,7 +248,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
     if( tree_making_period_conter_ca % TREE_MAKING_PERIOD_ == 0) // to save computation cost
     {
-        TicToc t_tree_construction_ca;
+        // TicToc t_tree_construction_ca;
 
         polarcontext_invkeys_to_search_ca.clear();
         polarcontext_invkeys_to_search_ca.assign( polarcontext_invkeys_mat_ca.begin(), polarcontext_invkeys_mat_ca.end() - MIX_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
@@ -257,7 +257,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
         polarcontext_tree_ca.reset(); 
         polarcontext_tree_ca = std::make_unique<InvKeyTree>(MIX_PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_ca, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
-        t_tree_construction_ca.toc("Tree construction");
+        // t_tree_construction_ca.toc("Tree construction");
     }
     tree_making_period_conter_ca = tree_making_period_conter_ca + 1;       
 
@@ -265,17 +265,17 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     std::vector<size_t> candidate_indexes_ca( MIX_NUM_CANDIDATES_FROM_TREE ); 
     std::vector<float> out_dists_sqr_ca( MIX_NUM_CANDIDATES_FROM_TREE );
 
-    TicToc t_tree_search_ca;
+    // TicToc t_tree_search_ca;
     nanoflann::KNNResultSet<float> knnsearch_result_ca( MIX_NUM_CANDIDATES_FROM_TREE );
     knnsearch_result_ca.init( &candidate_indexes_ca[0], &out_dists_sqr_ca[0] );
     polarcontext_tree_ca->index->findNeighbors( knnsearch_result_ca, &curr_key_ca[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
-    t_tree_search_ca.toc("Tree search");
+    // t_tree_search_ca.toc("Tree search");
 
     //num 部分
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
     if( tree_making_period_conter_num % TREE_MAKING_PERIOD_ == 0) // to save computation cost
     {
-        TicToc t_tree_construction_num;
+        // TicToc t_tree_construction_num;
 
         polarcontext_invkeys_to_search_num.clear();
         polarcontext_invkeys_to_search_num.assign( polarcontext_invkeys_mat_num.begin(), polarcontext_invkeys_mat_num.end() - MIX_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
@@ -284,7 +284,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
         polarcontext_tree_num.reset(); 
         polarcontext_tree_num = std::make_unique<InvKeyTree>(MIX_PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_num, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
-        t_tree_construction_num.toc("Tree construction");
+        // t_tree_construction_num.toc("Tree construction");
     }
     tree_making_period_conter_num = tree_making_period_conter_num + 1;
 
@@ -292,11 +292,11 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     std::vector<size_t> candidate_indexes_num( MIX_NUM_CANDIDATES_FROM_TREE ); 
     std::vector<float> out_dists_sqr_num( MIX_NUM_CANDIDATES_FROM_TREE );
 
-    TicToc t_tree_search_num;
+    // TicToc t_tree_search_num;
     nanoflann::KNNResultSet<float> knnsearch_result_num( MIX_NUM_CANDIDATES_FROM_TREE );
     knnsearch_result_num.init( &candidate_indexes_num[0], &out_dists_sqr_num[0] );
     polarcontext_tree_num->index->findNeighbors( knnsearch_result_num, &curr_key_num[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
-    t_tree_search_num.toc("Tree search");
+    // t_tree_search_num.toc("Tree search");
 
 
 
@@ -313,7 +313,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
     /* 
      *  step 2: pairwise distance (find optimal columnwise best-fit using cosine distance)
      */
-    TicToc t_calc_dist;   
+    // TicToc t_calc_dist;   
     for ( int candidate_iter_idx = 0; candidate_iter_idx < MIX_NUM_CANDIDATES_FROM_TREE*2; candidate_iter_idx++ )
     {
         MatrixXd polarcontext_candidate = polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
@@ -332,7 +332,7 @@ std::pair<int, float> MIXManager::MIXdetectLoopClosureID ( void )
             nn_idx = candidate_indexes[candidate_iter_idx];
         }
     }
-    t_calc_dist.toc("Distance calc");
+    // t_calc_dist.toc("Distance calc");
 
     //储存回环帧的id和相似度距离
     std::pair<int,float> data{(polarcontexts_.size()-1),min_dist};

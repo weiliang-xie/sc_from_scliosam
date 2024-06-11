@@ -150,7 +150,7 @@ std::pair<double, int> SCManager::distanceBtnScanContext( MatrixXd &_sc1, Matrix
 
 MatrixXd SCManager::makeScancontext( pcl::PointCloud<SCPointType> & _scan_down )
 {
-    TicToc t_making_desc;
+    // TicToc t_making_desc;
 
     int num_pts_scan_down = _scan_down.points.size();
 
@@ -189,7 +189,7 @@ MatrixXd SCManager::makeScancontext( pcl::PointCloud<SCPointType> & _scan_down )
             if( desc(row_idx, col_idx) == NO_POINT )
                 desc(row_idx, col_idx) = 0;
 
-    t_making_desc.toc("PolarContext making");
+    // t_making_desc.toc("PolarContext making");
 
     return desc;    //返回传入帧的描述矩阵
 } // SCManager::makeScancontext
@@ -286,7 +286,7 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
     if( tree_making_period_conter == 0) // to save computation cost
     {
-        TicToc t_tree_construction;
+        // TicToc t_tree_construction;
 
         polarcontext_invkeys_to_search_.clear();
         polarcontext_invkeys_to_search_.assign( database_polarcontext_invkeys_mat_.begin(), database_polarcontext_invkeys_mat_.end() - NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
@@ -296,7 +296,7 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
         polarcontext_tree_ = std::make_unique<InvKeyTree>(PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
         tree_making_period_conter = tree_making_period_conter + 1;
-        t_tree_construction.toc("Tree construction");
+        // t_tree_construction.toc("Tree construction");
     }
         
     double min_dist = 10000000; // init with somthing large
@@ -307,16 +307,16 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     std::vector<size_t> candidate_indexes( NUM_CANDIDATES_FROM_TREE ); 
     std::vector<float> out_dists_sqr( NUM_CANDIDATES_FROM_TREE );
 
-    TicToc t_tree_search;
+    // TicToc t_tree_search;
     nanoflann::KNNResultSet<float> knnsearch_result( NUM_CANDIDATES_FROM_TREE );
     knnsearch_result.init( &candidate_indexes[0], &out_dists_sqr[0] );
     polarcontext_tree_->index->findNeighbors( knnsearch_result, &curr_key[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
-    t_tree_search.toc("Tree search");
+    // t_tree_search.toc("Tree search");
 
     /* 
      *  step 2: pairwise distance (find optimal columnwise best-fit using cosine distance)
      */
-    TicToc t_calc_dist;   
+    // TicToc t_calc_dist;   
     for ( int candidate_iter_idx = 0; candidate_iter_idx < NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
         MatrixXd polarcontext_candidate = database_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
@@ -333,10 +333,10 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
             nn_idx = candidate_indexes[candidate_iter_idx];
         }
     }
-    t_calc_dist.toc("Distance calc");
+    // t_calc_dist.toc("Distance calc");
 
     //储存回环帧的id和相似度距离
-    std::pair<int,float> data{(inquiry_polarcontexts_.size()-1),min_dist};
+    std::pair<int,float> data{(inquiry_gt_id.back()),min_dist};
     loopclosure_id_and_dist.push_back(data);
     loop_id = nn_idx; 
 

@@ -127,9 +127,9 @@ public:
     Eigen::Vector3d MatchKeyVoxelEllipsoid(std::vector<class Voxel_Ellipsoid> &v_eloid_cur, std::vector<class Voxel_Ellipsoid> &v_eloid_can);
 
     //svd分解获取转移矩阵
-    std::vector<Eigen::Vector3d> NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid);
-    std::vector<Eigen::Vector3d> NDAlignFeaturePoint(std::vector<Eigen::Vector3d> feature_point, int align_scetor);
-    Eigen::Matrix4d NDGetTransformMatrixwithSVD(std::vector<Eigen::Vector3d> inquiry_feature_p, std::vector<Eigen::Vector3d> match_feature_p, int align_num);
+    std::vector<Eigen::Matrix3Xd> NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid);
+    std::vector<Eigen::Matrix3Xd> NDAlignFeaturePoint(std::vector<Eigen::Matrix3Xd> feature_point, int align_scetor);
+    Eigen::Matrix4d NDGetTransformMatrixwithSVD(std::vector<Eigen::Matrix3Xd> inquiry_feature_p, std::vector<Eigen::Matrix3Xd> match_feature_p, int align_num);
 
 
 
@@ -186,7 +186,7 @@ public:
     std::unique_ptr<InvKeyTree> polarcontext_tree_;
 
     std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
-    std::vector<std::vector<Eigen::Vector3d> > cloud_feature_set;   //各帧点云的特征点集
+    std::vector<std::vector<Eigen::Matrix3Xd> > cloud_feature_set;   //各帧点云的特征点集
 
     std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
     std::vector<int> database_gt_id;                                        //database的对应真值id
@@ -201,4 +201,6 @@ public:
 
 //evaluate
     Evaluate evaluate_data;
+//time cost
+    double step_timecost[6] = {0.0,0.0,0.0,0.0,0.0,0.0};
 };

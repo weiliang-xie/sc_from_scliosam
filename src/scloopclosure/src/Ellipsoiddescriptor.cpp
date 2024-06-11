@@ -16,7 +16,7 @@ using namespace std;
 std::vector<Eigen::MatrixXd> GetSingularvalue(Eigen::MatrixXd bin_cov);
 bool feature_point_cmp(Eigen::Vector3d point1, Eigen::Vector3d point2);
 Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
-Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw = 0);
+Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Matrix3Xd> source_feature_point, std::vector<Eigen::Matrix3Xd> cand_feature_point, const double yaw = 0);
 
 
 //特征数据库描述符制作函数  输入点云数据 点云的帧id（ 从0开始算 ）
@@ -469,14 +469,14 @@ double EllipsoidLocalization::GetCovSimilarityWithCos(Matrix3d _sc1, Matrix3d _s
 
 
 /*---------------------------------------------------------------------------获取转移矩阵---------------------------------------------------------------------------*/
-//匹配点刚性转置获取转移矩阵 旋转基底为参数1特征点所在的坐标系
+//匹配点刚性转置获取转移矩阵 旋转基底为参数1特征点所在的坐标系 已弃用
 Eigen::Matrix4d EllipsoidLocalization::MakeFeaturePointandGetTransformMatirx(Frame_Ellipsoid frame_eloid_1, Frame_Ellipsoid frame_eloid_2)
 {
     std::vector<Eigen::Vector3d> feature_point_1 = MakeFeaturePoint(frame_eloid_1);
     std::vector<Eigen::Vector3d> feature_point_2 = MakeFeaturePoint(frame_eloid_2);
 
-    // return GetTransformMatrix(feature_point_1, feature_point_2);
-    return GetTransformMatrixwithCERE(feature_point_1, feature_point_2);
+    return GetTransformMatrix(feature_point_1, feature_point_2);
+    // return GetTransformMatrixwithCERE(feature_point_1, feature_point_2);
 }
 
 Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1, std::vector<Eigen::Vector3d> feature_point_2)
@@ -563,36 +563,90 @@ Eigen::Matrix4d GetTransformMatrix(std::vector<Eigen::Vector3d> feature_point_1,
     return transform_matrix;
 }
 
-Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw)
+Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Matrix3Xd> source_feature_point, std::vector<Eigen::Matrix3Xd> cand_feature_point, const double yaw)
 {
     //使用迭代优化方法实现位姿的求解
-    double tf_para[3] = {0,0,0};
-    //这里是不是需要提供初值？
-    ceres::Problem problem;
-    for (int i = 0; i < source_feature_point.size(); i++)
+    //获取初值
+    double tf_para[3] = {10,10,0};
+    // ceres::Problem problem;
+
+    // for (int i = 0; i < source_feature_point.size(); i++)
+    // {
+    //     source_feature_point[i][2] = 1;
+    //     cand_feature_point[i][2] = 1;
+    //     Eigen::Matrix<double, 2, 1> source_fp_ = source_feature_point[i].segment(0,2);
+    //     Eigen::Matrix<double, 2, 1> cand_fp_ = cand_feature_point[i].segment(0,2);
+    //     problem.AddResidualBlock(new ceres::AutoDiffCostFunction<CostFunctor, 1, 3>(new CostFunctor(source_fp_, cand_fp_)), nullptr, tf_para);
+    // }
+
+    ceres::FirstOrderFunction* function = new ceres::AutoDiffFirstOrderFunction<CostFunctor, 3>(new CostFunctor(source_feature_point, cand_feature_point));
+
+    ceres::GradientProblem problem(function);
+
+    //获取初值
+    double min_cost = 100000;
+    for (size_t i = 0; i < source_feature_point.size() - 1; i++)
     {
-        source_feature_point[i][2] = 1;
-        cand_feature_point[i][2] = 1;
-        Eigen::Matrix<double, 2, 1> source_fp_ = source_feature_point[i].segment(0,2);
-        Eigen::Matrix<double, 2, 1> cand_fp_ = cand_feature_point[i].segment(0,2);
-        problem.AddResidualBlock(new ceres::AutoDiffCostFunction<CostFunctor, 1, 3>(new CostFunctor(source_fp_, cand_fp_)), nullptr, tf_para);
+        double cost[1] = {0};
+
+        // Eigen::Matrix3d init_t;
+        
+        Eigen::Matrix<double, 2, Eigen::Dynamic> src_pt_; // src
+        Eigen::Matrix<double, 2, Eigen::Dynamic> cand_pt_; // tgt
+        src_pt_.resize(2, 2);
+        cand_pt_.resize(2, 2);
+
+        //高点
+        src_pt_.col(0) = source_feature_point[i].col(0).segment(0,2);
+        cand_pt_.col(0) = cand_feature_point[i].col(0).segment(0,2);
+        //低点
+        src_pt_.col(1) = source_feature_point[i].col(1).segment(0,2);
+        cand_pt_.col(1) = cand_feature_point[i].col(1).segment(0,2);
+
+        Eigen::Matrix3d init_t = Eigen::umeyama(src_pt_, cand_pt_, false);      //svd分解求解
+
+        double tf_data_init_[3];
+        tf_data_init_[0] = init_t(0,2);
+        tf_data_init_[1] = init_t(1,2);
+        tf_data_init_[2] = std::atan2(init_t(1, 0), init_t(0, 0));
+
+        // cout << "[opintimize] init trans x y and rotate yaw = ";
+        // for (auto i : tf_data_init_)
+        //     cout << i << " ";
+        // cout << endl;
+
+        problem.Evaluate(tf_data_init_, cost, nullptr);
+
+        // cout << "cost: " << cost[0] << endl;
+
+        if(cost[0] < min_cost)
+        {
+            memcpy(tf_para,tf_data_init_,sizeof(tf_data_init_));     
+            min_cost = cost[0];
+        } 
+                        
     }
 
 
+
+    // cout << "min cost parameter is: " << tf_para[0] << " " << tf_para[1] << " " << tf_para[2] << " " << endl;
+    
+
     //配置求解器，这里有很多options的选项，自查
-    ceres::Solver::Options options;
+    ceres::GradientProblemSolver::Options options;
     // options.linear_solver_type = ceres::DENSE_QR;  //增量方程如何求解,QR分解的方法
     options.minimizer_progress_to_stdout = false; //不输出到命令行
     options.max_num_iterations = 30;
 
-    ceres::Solver::Summary summary; // 优化信息
-    ceres::Solve(options, &problem, &summary); // 开始优化
+    ceres::GradientProblemSolver::Summary summary;// 优化信息
+    ceres::Solve(options, problem, tf_para, &summary); // 开始优化
 
     // cout << summary.BriefReport() << endl;
     // cout << "[opintimize] estimated trans x y and rotate yaw = ";
-    for (auto i : tf_para)
-        cout << i << " ";
-    cout << endl;
+    // for (auto i : tf_para)
+    //     cout << i << " ";
+    // cout << endl;
+    
 
     Eigen::Isometry2d tf_est;
     tf_est.setIdentity();

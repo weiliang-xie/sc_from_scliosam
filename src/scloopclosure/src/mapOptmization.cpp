@@ -228,7 +228,7 @@ public:
 
     //xwl 修改添加
     string data_set_sq = "00";
-    int data_set_frame_num = 4541;
+    int16_t data_set_frame_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
     int16_t laser_cloud_frame_number;   //实时更新的当前帧序号，在原始的数据bag包中 = 帧id
     int16_t eld_laser_cloud_frame_number;   //实时更新的当前帧id（转换后） 用于真值数据bag包
     Eigen::MatrixXd sc_pose_origin;
@@ -239,8 +239,8 @@ public:
     std::vector<std::pair<int, int> > loopclosure_gt_index;  //回环真值id队列
     ofstream prFile;                                                    //pr文件流定义
     ofstream File;                                                      //通用保存文件流定义
-    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_can-20_gt-small.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_ca_ve_transform_add-near-8-voxel_dist-2.csv";    //ND pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_center.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_center.csv";    //ND pr数据储存地址
     string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_" + data_set_sq + "_ca_num_ve-test_can-20.csv";    //MIX pr数据储存地址
     //计算平移向量验证
     std::vector<std::pair<double,double> > error_arry;
@@ -291,8 +291,8 @@ public:
         unused = system((std::string("mkdir ") + savePCDDirectory).c_str());
 
         saveMapPCDDirectory = savePCDDirectory + "RawMapScans/";
-        // unused = system((std::string("exec rm -r ") + saveMapPCDDirectory).c_str());
-        // unused = system((std::string("mkdir -p ") + saveMapPCDDirectory).c_str());
+        // unused = system((std::string("exec rm -r ") + saveMapPCDDirectory + data_set_sq + "/").c_str());
+        // unused = system((std::string("mkdir -p ") + saveMapPCDDirectory + data_set_sq + "/").c_str());
 
         saveSCDDirectory = savePCDDirectory + "SC/SCDs/"; // SCD: scan context descriptor 
         unused = system((std::string("exec rm -r ") + saveSCDDirectory).c_str());
@@ -657,24 +657,24 @@ public:
         elmanager.DivideVoxel(*similar_cloud);
         Frame_Ellipsoid eloid_2 = elmanager.BulidingEllipsoidModel();
 
-        Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_1, eloid_2);
+        // Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_1, eloid_2);
         // Eigen::Vector3d gt_translate_center_vector = {pose_ground_truth[3304](0,3) - pose_ground_truth[2356](0,3),
         //                                                 pose_ground_truth[3304](1,3) - pose_ground_truth[2356](1,3),
         //                                                 pose_ground_truth[3304](2,3) - pose_ground_truth[2356](2,3)};
 
-        cout << "transform matrix: " << endl << transform_matrix << endl;
-        cout << "gt pose: " << pose_ground_truth[3304] << endl;
+        // cout << "transform matrix: " << endl << transform_matrix << endl;
+        // cout << "gt pose: " << pose_ground_truth[3304] << endl;
 
-        Eigen::Matrix4d test_loop_pose = transform_matrix * pose_ground_truth[2356];
+        // Eigen::Matrix4d test_loop_pose = transform_matrix * pose_ground_truth[2356];
 
-        cout << "reference pose:" << pose_ground_truth[2356] << endl;
+        // cout << "reference pose:" << pose_ground_truth[2356] << endl;
 
-        cout << "loop test pose: " << test_loop_pose << endl;
+        // cout << "loop test pose: " << test_loop_pose << endl;
 
-        Eigen::Isometry2d est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[3304], pose_ground_truth[2356], transform_matrix);
+        // Eigen::Isometry2d est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[3304], pose_ground_truth[2356], transform_matrix);
 
-        double err_vec[3] = {est_err.translation().x(), est_err.translation().y(), std::atan2(est_err(1, 0), est_err(0, 0))};
-        printf(" Error: dx=%f, dy=%f, dtheta=%f\n", err_vec[0], err_vec[1], err_vec[2]);        
+        // double err_vec[3] = {est_err.translation().x(), est_err.translation().y(), std::atan2(est_err(1, 0), est_err(0, 0))};
+        // printf(" Error: dx=%f, dy=%f, dtheta=%f\n", err_vec[0], err_vec[1], err_vec[2]);        
 
     }
 
@@ -687,14 +687,15 @@ public:
     //获取pose真值
     void  getposegroundtruth()
     {
-
-        const char *fileName = "/home/jtcx/data_set/kitti/data_odometry/dataset/poses/00.txt";
+        string filename = "/home/jtcx/data_set/kitti/data_odometry/dataset/poses/" + data_set_sq + ".txt";
+        const char *fileName_ = filename.c_str();
+        // const char *fileName_ = "/home/jtcx/data_set/kitti/data_odometry/dataset/poses/02.txt";
     
         std::ifstream fileStream;
         std::string buf;
         float temp;
         int k;
-        fileStream.open(fileName, std::ios::in);//ios::in 表示以只读的方式读取文件
+        fileStream.open(fileName_, std::ios::in);//ios::in 表示以只读的方式读取文件
     
         if (fileStream.fail())//文件打开失败:返回0
         {
@@ -780,7 +781,7 @@ public:
                 // distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y) + (his_z-cur_z)*(his_z-cur_z));
                 distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
                 // cout << "cur and his distance: " << distance << endl;
-                if (distance <= 5)
+                if (distance <= 5.0)
                 {
                     std::pair<int, int> gt_id =  {cur_index, i};
                     loopclosure_gt_index.push_back(gt_id);
@@ -930,8 +931,11 @@ public:
 
 
         saveprcurvedata(sc_pr_data_file, sc_pr_data_queue);
+        cout << "[Make save pr]     finish making and saving SC pr! num is: " << scManager.loopclosure_id_and_dist.size() << endl;
         saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
+        cout << "[Make save pr]     finish making and saving ND pr! num is: " << ndManager.loopclosure_id_and_dist.size() << endl;
         saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
+        cout << "[Make save pr]     finish making and saving MIX pr! num is: " << mixManager.loopclosure_id_and_dist.size() << endl;
     }
 
     //更新路径
@@ -965,7 +969,7 @@ public:
         std::string cur_frame_idx = padZeros(frame_idx);
         pcl::PointCloud<PointType>::Ptr thisRawCloudFrame(new pcl::PointCloud<PointType>());
         pcl::copyPointCloud(*laserCloudRaw,  *thisRawCloudFrame);  //复制点云
-        pcl::io::savePCDFileBinary(saveMapPCDDirectory + cur_frame_idx + ".pcd", *thisRawCloudFrame);
+        pcl::io::savePCDFileBinary(saveMapPCDDirectory + data_set_sq + "/" + cur_frame_idx + ".pcd", *thisRawCloudFrame);
     }
 
     //建立地图数据库（记录特定的点云帧） 去除真值帧
@@ -986,11 +990,11 @@ public:
             {
                 std::string frame_idx = padZeros(i);
                 pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
-                pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *_rawcloud); 
+                pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
                 //eloid部分数据库制作
                 // elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
                 //SC部分数据库制作
-                // scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
+                scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
                 //ND数据库制作
                 ndManager.NDmakeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);
 
@@ -1014,6 +1018,7 @@ public:
     //提取真值点云帧
     void GetGroundtrueFrame()
     {
+        int all_gt_cloud = 0;
         ros::Rate loop_rate(10);
         ros::Publisher pubGTFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/gt_loop_closure_cloud", 1);
         if (pubGTFrames.getNumSubscribers() != 0)
@@ -1027,15 +1032,16 @@ public:
                     if(i == gt_it.first)
                     {
                         std::string frame_idx = padZeros(i);
-                        pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + frame_idx + ".pcd", *gt_cloud); 
+                        pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + data_set_sq + "/" + frame_idx + ".pcd", *gt_cloud); 
                         publishCloud(&pubGTFrames, gt_cloud, timeLaserInfoStamp, odometryFrame);
-                        // cout << "publish gt frame " << i << endl;
+                        cout << "publish gt frame " << i << endl;
+                        all_gt_cloud++;
                         loop_rate.sleep();
                     }      
                 }
             } 
         }
-        cout << "finish publish gt frame" << endl;   
+        cout << "finish publish gt frame" << " all num is: " << all_gt_cloud << endl;   
     }  
 
 
@@ -1078,7 +1084,7 @@ public:
             
             // downsampleCurrentScan();    //降采样处理
 
-            // SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
+            SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
             NDsaveKeyFramesAndFactor();     //制作ND描述符
 
@@ -1086,7 +1092,7 @@ public:
 
             // SaveFrameEllipsoidDescriptor();      //制作eloid描述符
 
-            // performSCLoopClosure();      //求解SC回环状态
+            performSCLoopClosure();      //求解SC回环状态
 
             NDperformSCLoopClosure();      //求解ND回环状态
 
@@ -1103,16 +1109,16 @@ public:
         //     cout << "laser cloud is empty!" << endl;    //有效        
 
         //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
-        int16_t sq_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
-        if(laser_cloud_frame_number == sq_num - 1 )
+        int16_t gt_bag_num = data_set_sq == "00" ? 800 : (data_set_sq == "02" ? 310 : (data_set_sq == "05" ? 10000 : 10000));
+        if(laser_cloud_frame_number == gt_bag_num)       //因为bag包会少录制几帧
         {
             makeandsaveprcurve();
 
-            string name_cos = "cos_error";
-            string name_dist = "cos_error";
+            // string name_cos = "cos_error";
+            // string name_dist = "cos_error";
 
-            string error_file = savePCDDirectory + "ND/others/nd_kitti_" + data_set_sq + "_translation_error.csv";
-            savedata(error_file, name_cos, name_dist,error_arry);
+            // string error_file = savePCDDirectory + "ND/others/nd_kitti_" + data_set_sq + "_translation_error.csv";
+            // savedata(error_file, name_cos, name_dist,error_arry);
         }
     }
 
@@ -1233,7 +1239,8 @@ public:
         scManager.evaluate_data.inquiry_id.push_back(eld_laser_cloud_frame_number);
         scManager.evaluate_data.loop_id.push_back(scManager.database_gt_id[detectResult.first]);
 
-        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
+        int16_t gt_bag_num = data_set_sq == "00" ? 800 : (data_set_sq == "02" ? 310 : (data_set_sq == "05" ? 10000 : 10000));
+        if(laser_cloud_frame_number == gt_bag_num)       //因为bag包会少录制几帧
         {
             double precise = EvaluateLoopFramePrecise(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
 
@@ -1386,7 +1393,8 @@ public:
         Eigen::Matrix4d transform_matrix_ = ndManager.NDGetTransformMatrixwithSVD(ndManager.cloud_feature_set.back(), ndManager.cloud_feature_set[loopKeyPre], ((int) yawDiffRad / ndManager.ND_PC_UNIT_SECTORANGLE));
         ndManager.transform_matrix.push_back(transform_matrix_);
 
-        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
+        int16_t gt_bag_num = data_set_sq == "00" ? 800 : (data_set_sq == "02" ? 310 : (data_set_sq == "05" ? 10000 : 10000));
+        if(laser_cloud_frame_number == gt_bag_num)       //因为bag包会少录制几帧
         {
             double precise = EvaluateLoopFramePrecise(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id);
             cout << "[ND]  Normal Distribute Perform Loop Closure    id current ratio: " << precise << endl;
@@ -1394,6 +1402,9 @@ public:
             //位姿评价
             EvaluateTransformError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.transform_matrix);
             // EvaluateAlignShiftError(ndManager.evaluate_data.inquiry_id, ndManager.evaluate_data.loop_id, ndManager.yaw_shift);
+
+            //time cost printf
+            printf("[ND] Time cost in 1 step: %7.5f\t 2 step: %7.5f\t 3 step: %7.5f\t 4 step: %7.5f\t 5 step: %7.5f\r\n", ndManager.step_timecost[0]/801,ndManager.step_timecost[1],ndManager.step_timecost[2]/801,ndManager.step_timecost[3]/801,ndManager.step_timecost[4]/801);
         }
 
 
@@ -1434,7 +1445,8 @@ public:
         // elmanager.database_vertical_invkeys_mat_after_hashfliter_.clear();
         // elmanager.after_database_gt_id.clear();
 
-        if(laser_cloud_frame_number == 800)       //因为bag包内只有801帧，所以先设置为800
+        int16_t gt_bag_num = data_set_sq == "00" ? 800 : (data_set_sq == "02" ? 310 : (data_set_sq == "05" ? 10000 : 10000));
+        if(laser_cloud_frame_number == gt_bag_num)       //因为bag包会少录制几帧
         {
             double precise = EvaluateLoopFramePrecise(elmanager.evaluate_data.inquiry_id, elmanager.evaluate_data.loop_id);
             cout << "[EL]  Eloid Perform Loop Closure    id current ratio: " << precise << endl;

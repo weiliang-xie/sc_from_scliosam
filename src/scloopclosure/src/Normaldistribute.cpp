@@ -14,13 +14,19 @@ using namespace std;
 
 void ClouDistrubutionVisualization(std::vector<Eigen::Vector3d> leaf_cloud, Eigen::MatrixXd axis_all, Eigen::Vector3d center, int index);
 extern Eigen::Matrix4d GetTransformMatrix(vector<Eigen::Vector3d> feature_point_1, vector<Eigen::Vector3d> feature_point_2);
-extern Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Vector3d> source_feature_point, std::vector<Eigen::Vector3d> cand_feature_point, const double yaw = 0);
+extern Eigen::Matrix4d GetTransformMatrixwithCERE(std::vector<Eigen::Matrix3Xd> source_feature_point, std::vector<Eigen::Matrix3Xd> cand_feature_point, const double yaw = 0);
 
 
 void NDManager::NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
 {
+    TicToc t_making_desc;
+    t_making_desc.tic();
     // cout << "[ND] make descriptor matrix and key" << endl;
     Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
+
+    step_timecost[0] += t_making_desc.toc();
+    printf("[Make descriptor] Time cost: %7.5fs\r\n", t_making_desc.toc());
+
     Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
     Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
@@ -49,7 +55,6 @@ void NDManager::NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointT
 
 MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
-    TicToc t_making_desc;
 
     // main
     const int NO_POINT = -1000;
@@ -105,31 +110,45 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
             if(bin_it.size()){           
                 std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
                 bin_eloid.point_num = bin_it.size();
-                bin_mean_cov_ = NDGetCovarMatrix(bin_it);
+                Eigen::Vector3d center_ = {0,0,0};
+
+                //为降低耗时 简版获取均值
+                for(auto bin_pt_ : bin_it)
+                {
+                    center_[0] += bin_pt_[0];
+                    center_[1] += bin_pt_[1];
+                    center_[2] += bin_pt_[2];
+                }
+                center_ /= bin_eloid.point_num;
+                bin_eloid.center.x = center_[0];
+                bin_eloid.center.y = center_[1];
+                bin_eloid.center.z = center_[2];
+
+                // bin_mean_cov_ = NDGetCovarMatrix(bin_it);
 
                 //构建点云的体素椭球
-                std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
+                // std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
                 //均值填充
-                bin_eloid.center.x = bin_mean_cov_.first(0,0);
-                bin_eloid.center.y = bin_mean_cov_.first(0,1);
-                bin_eloid.center.z = bin_mean_cov_.first(0,2);
-                bin_eloid.cov = bin_mean_cov_.second;\
+                // bin_eloid.center.x = bin_mean_cov_.first(0,0);
+                // bin_eloid.center.y = bin_mean_cov_.first(0,1);
+                // bin_eloid.center.z = bin_mean_cov_.first(0,2);
+                // bin_eloid.cov = bin_mean_cov_.second;
                 bin_eloid.num = bin_it.size();
 
-                bin_eigen_ = NDGetEigenvalues(bin_eloid.cov);
-                bin_eloid.axis_length = bin_eigen_.first;
-                bin_eloid.axis = bin_eigen_.second;
+                // bin_eigen_ = NDGetEigenvalues(bin_eloid.cov);
+                // bin_eloid.axis_length = bin_eigen_.first;
+                // bin_eloid.axis = bin_eigen_.second;
 
                 //测试 最大高度
-                for(int i = 0; i < bin_it.size(); i++)
-                {
-                    if(bin_it[i][2] > bin_eloid.max_h_center.z)
-                    {
-                        bin_eloid.max_h_center.x = bin_it[i][0];
-                        bin_eloid.max_h_center.y = bin_it[i][1];
-                        bin_eloid.max_h_center.z = bin_it[i][2];
-                    }
-                }
+                // for(int i = 0; i < bin_it.size(); i++)
+                // {
+                //     if(bin_it[i][2] > bin_eloid.max_h_center.z)
+                //     {
+                //         bin_eloid.max_h_center.x = bin_it[i][0];
+                //         bin_eloid.max_h_center.y = bin_it[i][1];
+                //         bin_eloid.max_h_center.z = bin_it[i][2];
+                //     }
+                // }
 
                 if(!NDFilterVoxelellipsoid(bin_eloid)) 
                 {   
@@ -137,15 +156,15 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
                     // bin_it.clear();
                 }else{   
 
-                    //计算椭球扁平程度
-                    double flat_ratio = 0;
-                    if(bin_eloid.axis_length.size() != 3){
-                        cout << "The singular value is error !!!" << endl;
-                    }else{
-                        if(bin_eloid.axis_length[2] != 0)
-                            flat_ratio = bin_eloid.axis_length[2] / bin_eloid.axis_length[0];
-                        else flat_ratio = 0;
-                    }
+                    // //计算椭球扁平程度
+                    // double flat_ratio = 0;
+                    // if(bin_eloid.axis_length.size() != 3){
+                    //     cout << "The singular value is error !!!" << endl;
+                    // }else{
+                    //     if(bin_eloid.axis_length[2] != 0)
+                    //         flat_ratio = bin_eloid.axis_length[2] / bin_eloid.axis_length[0];
+                    //     else flat_ratio = 0;
+                    // }
 
                     //填充描述矩阵
                     desc(ring_idx,sector_idx) = bin_eloid.center.z;
@@ -164,7 +183,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
         }
     }
-    std::vector<Eigen::Vector3d> feature_p_ = NDGetFeaturePoint(cloud_voxel_eloid_);
+    std::vector<Eigen::Matrix3Xd> feature_p_ = NDGetFeaturePoint(cloud_voxel_eloid_);
     cloud_feature_set.push_back(feature_p_);
 
     //传入序列 储存当帧点云体素椭球
@@ -179,7 +198,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
     // cout << "[ND]  finish make ND descriptor" << endl;
 
-    t_making_desc.toc("PolarContext making");
+    // t_making_desc.toc("PolarContext making");
 
     return desc;
 }
@@ -242,6 +261,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     if( tree_making_period_conter  == 0) // to save computation cost
     {
         TicToc t_tree_construction;
+        t_tree_construction.tic();
 
         polarcontext_invkeys_to_search_.clear();
         polarcontext_invkeys_to_search_.assign( database_polarcontext_invkeys_mat_.begin(), database_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
@@ -250,7 +270,11 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         polarcontext_tree_.reset(); 
         polarcontext_tree_ = std::make_unique<InvKeyTree>(ND_PC_NUM_RING /* dim */, polarcontext_invkeys_to_search_, 10 /* max leaf */ );  //开辟内存同时构造InvKeyTree类 并在构造函数内完成重建树
         // tree_ptr_->index->buildIndex(); // inernally called in the constructor of InvKeyTree (for detail, refer the nanoflann and KDtreeVectorOfVectorsAdaptor)
-        t_tree_construction.toc("Tree construction");
+        // t_tree_construction.toc("Tree construction");
+
+        // cout << "[Tree construction] Time cost: " << t_tree_construction.toc("Tree construction") << endl;
+        step_timecost[1] += t_tree_construction.toc();
+        printf("[Tree construction] Time cost: %7.5fs\r\n", t_tree_construction.toc());
 
         tree_making_period_conter = tree_making_period_conter + 1;
     }
@@ -264,10 +288,16 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     std::vector<float> out_dists_sqr( ND_NUM_CANDIDATES_FROM_TREE );
 
     TicToc t_tree_search;
+    t_tree_search.tic();
+
     nanoflann::KNNResultSet<float> knnsearch_result( ND_NUM_CANDIDATES_FROM_TREE );
     knnsearch_result.init( &candidate_indexes[0], &out_dists_sqr[0] );
     polarcontext_tree_->index->findNeighbors( knnsearch_result, &curr_key[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
-    t_tree_search.toc("Tree search");
+    // t_tree_search.toc("Tree search");
+        
+    step_timecost[2] += t_tree_search.toc();
+    printf("[Tree search] Time cost: %7.5fs\r\n", t_tree_search.toc());
+
 
     /* 
      *  step 2: pairwise distance (find optimal columnwise best-fit using cosine distance)
@@ -292,7 +322,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
             nn_idx = candidate_indexes[candidate_iter_idx];
         }
     }
-    t_calc_dist.toc("Distance calc");
+    // t_calc_dist.toc("Distance calc");    
 
     //储存回环帧的id和相似度距离
     std::pair<int,float> data{(inquiry_gt_id.back()),min_dist};      
@@ -310,6 +340,11 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * ND_PC_UNIT_SECTORANGLE);
     std::pair<int, float> result {loop_id, yaw_diff_rad};   //返回达到回环阈值的描述符id和旋转角度
+
+    step_timecost[3] += t_calc_dist.toc();
+
+    printf("[Descriptor match] Time cost: %7.5fs\r\n", t_calc_dist.toc());
+
 
     return result;
 
@@ -658,109 +693,6 @@ double NDManager::NDDistVoxeleloidPlace(std::vector<class Voxel_Ellipsoid> &v_el
             cur_id = (ring_idx - 1) * ND_PC_NUM_SECTOR + (sector_idx - 1);
             // cout << "cur id is: " << cur_id << endl;
 
-
-
-            // //查询点云的体素id可靠性判断 若对应的查询点云体素不可靠，搜寻附近体素
-            // if(v_eloid_cur[cur_id].valid != 1)
-            // {
-            //     double min_dist = 1000;
-            //     int _cur_id = (cur_id + 1) % 60 + (int)(cur_id / 60) * 60;    //下一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     } 
-            //     _cur_id = (cur_id - 1 + 60) % 60 + (int)(cur_id / 60) * 60;   //上一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     } 
-            //     _cur_id = (cur_id + 60) % 1200;     //下一环体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }  
-            //     _cur_id = (cur_id - 60 + 1200) % 1200;  //上一环体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }  
-            //     _cur_id = ((cur_id + 60  + 1) % 60 + (int)(cur_id / 60) * 60 + 60) % 1200;  //下一环下一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }  
-            //     _cur_id = ((cur_id + 60 - 1) % 60 + (int)(cur_id / 60) * 60 + 60) % 1200;      //下一环上一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }  
-            //     _cur_id = ((cur_id + 60 + 1) % 60 + (int)(cur_id / 60) * 60 - 60 + 1200) % 1200;          //上一环下一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }  
-            //     _cur_id = ((cur_id + 60 - 1) % 60 + (int)(cur_id / 60) * 60 - 60 + 1200) % 1200;          //上一环上一个体素
-            //     if(v_eloid_cur[_cur_id].valid != 1)
-            //     {
-            //         double _dist = sqrt((v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) * (v_eloid_cur[_cur_id].center.x - can_eloid_center_shift[0]) +
-            //                         (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) * (v_eloid_cur[_cur_id].center.y - can_eloid_center_shift[1]) +
-            //                         (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2]) * (v_eloid_cur[_cur_id].center.z - can_eloid_center_shift[2])); 
-            //         if(_dist < min_dist)
-            //         {
-            //             min_dist = _dist;
-            //             cur_id = _cur_id;
-            //         }
-            //     }                                           
-            // }
 
             double dist = 0;
             double dist_mid = 0;
@@ -1428,25 +1360,32 @@ std::pair<double, int> NDManager::NDdistancevoxeleloid( MatrixXd &_sc1, MatrixXd
 
 /*---------------------------------------------------------------------------SVD分解获取转移矩阵---------------------------------------------------------------------------*/
 //svd分解 转移矩阵获取
-Eigen::Matrix4d NDManager::NDGetTransformMatrixwithSVD(std::vector<Eigen::Vector3d> inquiry_feature_p, std::vector<Eigen::Vector3d> match_feature_p, int align_num)
+Eigen::Matrix4d NDManager::NDGetTransformMatrixwithSVD(std::vector<Eigen::Matrix3Xd> inquiry_feature_p, std::vector<Eigen::Matrix3Xd> match_feature_p, int align_num)
 {
+    TicToc get_transform;
+    get_transform.tic();
     //svd分解转移矩阵
 
     //获取偏移点集
-    std::vector<Eigen::Vector3d> aligned_inquiry_feature_p = NDAlignFeaturePoint(inquiry_feature_p, align_num);     //并未改变点的坐标，也无需后续进行还原旋转
+    std::vector<Eigen::Matrix3Xd> aligned_inquiry_feature_p = NDAlignFeaturePoint(inquiry_feature_p, align_num);     //并未改变点的坐标，也无需后续进行还原旋转
 
     //获取转移矩阵
     // return GetTransformMatrix(match_feature_p,aligned_inquiry_feature_p);
-    return GetTransformMatrixwithCERE(aligned_inquiry_feature_p, match_feature_p, (double)(align_num * ND_PC_UNIT_SECTORANGLE));
+    Eigen::Matrix4d result = GetTransformMatrixwithCERE(aligned_inquiry_feature_p, match_feature_p, (double)(align_num * ND_PC_UNIT_SECTORANGLE));
+
+    step_timecost[4] += get_transform.toc();
+    printf("[Get transform] Time cost: %7.5fs\r\n", get_transform.toc());
+
+    return result;
 
 }
 
 //获取特征点集 输入单帧点云的各个体素模型 输出点云的特征点集
-std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid)
+std::vector<Eigen::Matrix3Xd> NDManager::NDGetFeaturePoint(std::vector<class Voxel_Ellipsoid> frame_eloid)
 {
     std::vector<Eigen::Vector3d> feature_point_max(ND_PC_NUM_SECTOR, {0,0,-10});
     std::vector<Eigen::Vector3d> feature_point_min(ND_PC_NUM_SECTOR, {0,0,10});
-    std::vector<Eigen::Vector3d> feature_point_max_z(ND_PC_NUM_SECTOR, {0,0,-10});
+    // std::vector<Eigen::Vector3d> feature_point_max_z(ND_PC_NUM_SECTOR, {0,0,-10});
     for(int i = 0; i < frame_eloid.size(); i++)
     {
         //过滤无用体素模型
@@ -1454,7 +1393,7 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
             continue;
         int sector_index = i % ND_PC_NUM_SECTOR;
         Eigen::Vector3d center = {frame_eloid[i].center.x, frame_eloid[i].center.y, frame_eloid[i].center.z};                       //提取最高中心点作为匹配点集
-        Eigen::Vector3d max_z_pt_ = {frame_eloid[i].max_h_center.x, frame_eloid[i].max_h_center.y, frame_eloid[i].max_h_center.z};  //提取最高点作为匹配点集
+        // Eigen::Vector3d max_z_pt_ = {frame_eloid[i].max_h_center.x, frame_eloid[i].max_h_center.y, frame_eloid[i].max_h_center.z};  //提取最高点作为匹配点集
 
         if(center[2] > feature_point_max[sector_index][2])
         {
@@ -1465,10 +1404,10 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
         {
             feature_point_min[sector_index] = center;
         }
-        if(max_z_pt_[2] > feature_point_max_z[sector_index][2])
-        {
-            feature_point_max_z[sector_index] = max_z_pt_;
-        }
+        // if(max_z_pt_[2] > feature_point_max_z[sector_index][2])
+        // {
+        //     feature_point_max_z[sector_index] = max_z_pt_;
+        // }
 
 
     }
@@ -1488,13 +1427,13 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
             feature_p = {0,0,0};
         }
     }
-    for(auto feature_p : feature_point_max_z)
-    {
-        if(feature_p[2] == 10)
-        {
-            feature_p = {0,0,0};
-        }
-    }
+    // for(auto feature_p : feature_point_max_z)
+    // {
+    //     if(feature_p[2] == 10)
+    //     {
+    //         feature_p = {0,0,0};
+    //     }
+    // }
 
     //打印特征点集
     // cout << "NDGetFeaturePoint   make feature point: " << endl;
@@ -1504,11 +1443,13 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
     // }cout << endl;
 
     ////返回最高点与最低点的相对向量 
-    std::vector<Eigen::Vector3d> feature_point(ND_PC_NUM_SECTOR);
+    std::vector<Eigen::Matrix3Xd> feature_point(ND_PC_NUM_SECTOR);
     for(int i = 0; i < ND_PC_NUM_SECTOR; i++)
     {
         // feature_point[i] = feature_point_max[i] - feature_point_min[i];
-        feature_point[i] = feature_point_max[i];
+        feature_point[i].resize(3,2);
+        feature_point[i].col(0) = feature_point_max[i];
+        feature_point[i].col(1) = feature_point_min[i];
         // feature_point[i] = feature_point_max_z[i];
     }
 
@@ -1516,11 +1457,11 @@ std::vector<Eigen::Vector3d> NDManager::NDGetFeaturePoint(std::vector<class Voxe
 }
 
 //偏移对齐特征点集
-std::vector<Eigen::Vector3d> NDManager::NDAlignFeaturePoint(std::vector<Eigen::Vector3d> feature_point, int align_scetor)
+std::vector<Eigen::Matrix3Xd> NDManager::NDAlignFeaturePoint(std::vector<Eigen::Matrix3Xd> feature_point, int align_scetor)
 {
     // std::cout << "[ND] align feature point set" << std::endl;
 
-    std::vector<Eigen::Vector3d> aligned_feature_p(ND_PC_NUM_SECTOR);
+    std::vector<Eigen::Matrix3Xd> aligned_feature_p(ND_PC_NUM_SECTOR);
     for(int i = 0; i < feature_point.size(); i++)
     {
         // aligned_feature_p[(i+align_scetor) % ND_PC_NUM_SECTOR] = feature_point[i];

@@ -76,10 +76,21 @@ struct GetHashKey{
     }
 };
 
+//位姿优化的残差函数
 struct CostFunctor{
+
     const Eigen::Matrix<double, 2, 1> source_point, cand_point;
+    vector<Eigen::Matrix<double, 2, 1>> source_max_pt;
+    vector<Eigen::Matrix<double, 2, 1>> cand_max_pt;
+
     //结构初始化，依次传入单个源点和单个候选点
-    CostFunctor(Eigen::Matrix<double, 2, 1> source, Eigen::Matrix<double, 2, 1> cand) : source_point(source), cand_point(cand) {}
+    CostFunctor(std::vector<Eigen::Matrix3Xd> source, std::vector<Eigen::Matrix3Xd> cand) {
+        for(int i = 0; i < source.size(); i++)
+        {
+            source_max_pt.emplace_back(source[i].col(0).segment(0,2));
+            cand_max_pt.emplace_back(cand[i].col(0).segment(0,2));
+        }
+    }
 
     template <typename T>
     bool operator()(const T* const tf_para, T *residual) const {
@@ -89,9 +100,15 @@ struct CostFunctor{
         Eigen::Matrix<T, 2, 2> R;
         R << cos(theta), -sin(theta), sin(theta), cos(theta);
         Eigen::Matrix<T, 2, 1> t(x, y);
-        Eigen::Matrix<T, 2, 1> dis_pose = R * source_point + t - cand_point;
-        // residual[0] = T(abs(dis_pose[0])) + T(abs(dis_pose[1]));
-        residual[0] = T(dis_pose.norm());
+        residual[0] = T(0);
+        //遍历
+        for(int i = 0; i < source_max_pt.size(); i++)
+        {
+            Eigen::Matrix<T, 2, 1> dis_pose = R * source_max_pt[i] + t - cand_max_pt[i];
+            // residual[0] = T(abs(dis_pose[0])) + T(abs(dis_pose[1]));
+            residual[0] += T(dis_pose.norm());
+        }
+
         return true;
     }
 
