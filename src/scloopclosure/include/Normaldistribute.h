@@ -155,13 +155,13 @@ public:
     const double ND_PC_UNIT_RINGGAP = ND_PC_MAX_RADIUS / double(ND_PC_NUM_RING);    //径向单元长度
 
     // tree
-    const int    ND_NUM_EXCLUDE_RECENT = 30; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
+    const int    ND_NUM_EXCLUDE_RECENT = 50; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
     const int    ND_NUM_CANDIDATES_FROM_TREE = 20; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres
     const double ND_SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
     // const double ND_SC_DIST_THRES = 0.13; // empirically 0.1-0.2 is fine (rare false-alarms) for 20x60 polar context (but for 0.15 <, DCS or ICP fit score check (e.g., in LeGO-LOAM) should be required for robustness)
-    const double ND_SC_DIST_THRES = 100; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
+    const double ND_SC_DIST_THRES = 0.15; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
 
     // config 
@@ -188,8 +188,8 @@ public:
     std::vector<std::vector<class Voxel_Ellipsoid> > cloud_voxel_eloid;   //各帧点云的体素椭球
     std::vector<std::vector<Eigen::Matrix3Xd> > cloud_feature_set;   //各帧点云的特征点集
 
-    std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
-    std::vector<int> database_gt_id;                                        //database的对应真值id
+    // std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
+    // std::vector<int> database_gt_id;                                        //database的对应真值id
 
     std::vector<Eigen::Matrix4d> pose_ground_truth_copy;
     int cur_frame_id,can_frame_id;

@@ -25,18 +25,21 @@ void NDManager::NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointTy
     Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
 
     step_timecost[0] += t_making_desc.toc();
-    printf("[Make descriptor] Time cost: %7.5fs\r\n", t_making_desc.toc());
+    // printf("[Make descriptor] Time cost: %7.5fs\r\n", t_making_desc.toc());
 
     Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
     Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
     inquiry_polarcontexts_.push_back( sc );     //保存描述矩阵
+    polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
+    polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
     inquiry_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值 
-    inquiry_gt_id.push_back(frame_id); 
+    // inquiry_gt_id.push_back(frame_id); 
     
 }
 
+//弃用
 void NDManager::NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
 {
     // cout << "[ND] make descriptor matrix and key" << endl;
@@ -46,10 +49,10 @@ void NDManager::NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointT
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
     database_polarcontexts_.push_back( sc );     //保存描述矩阵
-    polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
-    polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
+    // polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
+    // polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
     database_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值  
-    database_gt_id.push_back(frame_id);
+    // database_gt_id.push_back(frame_id);
     
 }
 
@@ -245,7 +248,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     /* 
      * step 1: candidates from ringkey tree_
      */
-    if( (int)database_polarcontext_invkeys_mat_.size() < ND_NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
+    if( (int)inquiry_polarcontext_invkeys_mat_.size() < ND_NUM_EXCLUDE_RECENT + 1) //储存的描述符数量是否足够
     {
         std::pair<int, float> result {loop_id, 0.0};
         cout << "[ND] descriptor number is not enough" << endl;
@@ -258,13 +261,13 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
 
     // tree_ reconstruction (not mandatory to make everytime) //重建kd树 10秒重建一次树
-    if( tree_making_period_conter  == 0) // to save computation cost
+    if( tree_making_period_conter % 10 == 0) // to save computation cost
     {
         TicToc t_tree_construction;
         t_tree_construction.tic();
 
         polarcontext_invkeys_to_search_.clear();
-        polarcontext_invkeys_to_search_.assign( database_polarcontext_invkeys_mat_.begin(), database_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
+        polarcontext_invkeys_to_search_.assign( inquiry_polarcontext_invkeys_mat_.begin(), inquiry_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
 
         //复位polarcontext_tree_指针，并开辟一段动态内存用于存放 同时构造出来的KDTreeVectorOfVectorsAdaptor类
         polarcontext_tree_.reset(); 
@@ -274,10 +277,9 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
         // cout << "[Tree construction] Time cost: " << t_tree_construction.toc("Tree construction") << endl;
         step_timecost[1] += t_tree_construction.toc();
-        printf("[Tree construction] Time cost: %7.5fs\r\n", t_tree_construction.toc());
-
-        tree_making_period_conter = tree_making_period_conter + 1;
+        // printf("[Tree construction] Time cost: %7.5fs\r\n", t_tree_construction.toc());
     }
+    tree_making_period_conter += 1;
         
     double min_dist = 10000000; // init with somthing large
     int nn_align = 0;
@@ -296,7 +298,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     // t_tree_search.toc("Tree search");
         
     step_timecost[2] += t_tree_search.toc();
-    printf("[Tree search] Time cost: %7.5fs\r\n", t_tree_search.toc());
+    // printf("[Tree search] Time cost: %7.5fs\r\n", t_tree_search.toc());
 
 
     /* 
@@ -305,7 +307,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     TicToc t_calc_dist;   
     for ( int candidate_iter_idx = 0; candidate_iter_idx < ND_NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
-        MatrixXd polarcontext_candidate = database_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
+        MatrixXd polarcontext_candidate = inquiry_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
         std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
         std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
         // cur_frame_id = polarcontexts_.size() - 1;
@@ -325,17 +327,22 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     // t_calc_dist.toc("Distance calc");    
 
     //储存回环帧的id和相似度距离
-    std::pair<int,float> data{(inquiry_gt_id.back()),min_dist};      
+    std::pair<int,float> data{(inquiry_polarcontexts_.size() - 1),min_dist};      
     loopclosure_id_and_dist.push_back(data);
+
+    // cout << "[ND]   [descriptor match] the best loop id: " << nn_idx << " min distance: " << min_dist << endl;
 
     /* 
      * loop threshold check
      */
-    loop_id = nn_idx; 
-    
-    std::cout.precision(3); 
-    cout << "[ND]  [Loop found] Nearest distance: " << min_dist << " btn " << inquiry_gt_id.back() << " and " << database_gt_id[nn_idx] << "." << endl;
-    // cout << "[ND]  [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
+    if(min_dist <= ND_SC_DIST_THRES)
+    {
+        loop_id = nn_idx; 
+
+        std::cout.precision(3); 
+        cout << "[ND]  [Loop found] Nearest distance: " << min_dist << " btn " << inquiry_polarcontexts_.size() - 1 << " and " << nn_idx << "." << endl;
+        // cout << "[ND]  [Loop found] yaw diff: " << nn_align * ND_PC_UNIT_SECTORANGLE << " deg." << endl;
+    }
 
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * ND_PC_UNIT_SECTORANGLE);
@@ -343,7 +350,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
     step_timecost[3] += t_calc_dist.toc();
 
-    printf("[Descriptor match] Time cost: %7.5fs\r\n", t_calc_dist.toc());
+    // printf("[Descriptor match] Time cost: %7.5fs\r\n", t_calc_dist.toc());
 
 
     return result;
@@ -362,16 +369,16 @@ double NDManager::NDdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
         if( (col_sc1.norm() == 0) | (col_sc2.norm() == 0) )
             continue; // don't count this sector pair. 
 
-        // double sector_similarity = col_sc1.dot(col_sc2) / (col_sc1.norm() * col_sc2.norm());
-        double sector_similarity = (col_sc1 - col_sc2).norm();
+        double sector_similarity = col_sc1.dot(col_sc2) / (col_sc1.norm() * col_sc2.norm());    //余弦
+        // double sector_similarity = (col_sc1 - col_sc2).norm();                               //欧式距离
 
         sum_sector_similarity = sum_sector_similarity + sector_similarity;
         num_eff_cols = num_eff_cols + 1;
     }
     
     double sc_sim = sum_sector_similarity / num_eff_cols;
-    // return 1.0 - sc_sim;
-    return sc_sim;
+    return 1.0 - sc_sim;
+    // return sc_sim;
 
 } // distDirectSC
 
@@ -435,7 +442,7 @@ std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, Matr
 
 const Eigen::MatrixXd& NDManager::NDgetConstRefRecentSCD(void)
 {
-    return database_polarcontexts_.back();
+    return inquiry_polarcontexts_.back();
 }
 
 
@@ -1374,7 +1381,7 @@ Eigen::Matrix4d NDManager::NDGetTransformMatrixwithSVD(std::vector<Eigen::Matrix
     Eigen::Matrix4d result = GetTransformMatrixwithCERE(aligned_inquiry_feature_p, match_feature_p, (double)(align_num * ND_PC_UNIT_SECTORANGLE));
 
     step_timecost[4] += get_transform.toc();
-    printf("[Get transform] Time cost: %7.5fs\r\n", get_transform.toc());
+    // printf("[Get transform] Time cost: %7.5fs\r\n", get_transform.toc());
 
     return result;
 
