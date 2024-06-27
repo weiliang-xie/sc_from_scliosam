@@ -22,6 +22,8 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <unordered_map>        //hash
+
 #include "nanoflann.hpp"
 #include "KDTreeVectorOfVectorsAdaptor.h"
 #include "BaseGlobalLocalization.h"
@@ -29,6 +31,7 @@
 
 #include "tictoc.h"
 
+using namespace std;
 using namespace Eigen;
 using namespace nanoflann;
 
@@ -75,12 +78,16 @@ public:
         voxel_id = -1;
         max_h_center = {0};
         num = 0;
+        pt_distri = 0;
+        max_high_z = -10;
     }
     bool valid;         //是否为满足评判相似度的椭球模型
     int mode;           //椭球类型 1：线性 2：平面型 3：立体型
     int voxel_id;       //体素id
     int num;             //点云数量
     SCPointType max_h_center;       //测试 最大高度
+    int pt_distri;                //点云分布
+    double max_high_z;              //最大高度
 };
 
 class Refer_Ellipsoid: public old_Ellipsoid{
@@ -93,10 +100,9 @@ class NDManager
 {
 public:
     NDManager() = default;
-    void NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
     void NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id);
     std::pair<int, float> NDdetectLoopClosureID( void ); // int: nearest node index, float: relative yaw  
-    Eigen::MatrixXd NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud);
+    std::pair<MatrixXd, MatrixXd> NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud);
     Eigen::MatrixXd NDmakeRingkeyFromScancontext( Eigen::MatrixXd &_desc );
     Eigen::MatrixXd NDmakeSectorkeyFromScancontext( Eigen::MatrixXd &_desc );
 
@@ -131,8 +137,21 @@ public:
     std::vector<Eigen::Matrix3Xd> NDAlignFeaturePoint(std::vector<Eigen::Matrix3Xd> feature_point, int align_scetor);
     Eigen::Matrix4d NDGetTransformMatrixwithSVD(std::vector<Eigen::Matrix3Xd> inquiry_feature_p, std::vector<Eigen::Matrix3Xd> match_feature_p, int align_num);
 
+    //双特征值位置识别
+    const int PT_DISTRIBUTE_BLOCK_NUM = 8;      //点云分布特征高度分区数量
+    const int DISTRIBUTE_KEY_BLOCK_NUM = 2;     //点云分布特征键值分区数量
+    std::vector<int> NDmakeDistributekeyFromScancontext(Eigen::MatrixXd _desc);
+    void MakeDatabaseHashForm(int frame_id, vector<int> distribute_key);
+    std::vector<int> GetHashFrameIDCustom(int key);
+    std::vector<size_t> SearchCandidateIDwithHash(std::vector<int> cur_key);
 
 
+    std::unordered_map<int, std::vector<int>> distribute_map;
+    std::vector<std::vector<int>> distribute_frame_key;
+
+//测试
+    Eigen::MatrixXd NDAdjustDescriptor(Eigen::Vector2d can_toward, Eigen::MatrixXd src_matrix);
+    Eigen::Vector2d NDGetGtTranslateVector(int can_id, int src_id);
 
     template<typename _Tp>
     void print_matrix(const _Tp* data, const int rows, const int cols)
@@ -148,8 +167,8 @@ public:
 
 public:
     const double LIDAR_HEIGHT = 2.0;                                                //雷达高度
-    const int    ND_PC_NUM_RING = 16;                                               //圆环数量 沿径向切割
-    const int    ND_PC_NUM_SECTOR = 40;                                             //扇形数量 沿方位角切割
+    const int    ND_PC_NUM_RING = 20;                                               //圆环数量 沿径向切割（这里考虑与真值的检索范围一致）
+    const int    ND_PC_NUM_SECTOR = 60;                                             //扇形数量 沿方位角切割
     const double ND_PC_MAX_RADIUS = 80.0;                                           //最大检测距离
     const double ND_PC_UNIT_SECTORANGLE = 360.0 / double(ND_PC_NUM_SECTOR);         //单元方位角角度 deg
     const double ND_PC_UNIT_RINGGAP = ND_PC_MAX_RADIUS / double(ND_PC_NUM_RING);    //径向单元长度
@@ -159,7 +178,7 @@ public:
     const int    ND_NUM_CANDIDATES_FROM_TREE = 20; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres
-    const double ND_SEARCH_RATIO = 0.1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
+    const double ND_SEARCH_RATIO = 1; // for fast comparison, no Brute-force, but search 10 % is okay. // not was in the original conf paper, but improved ver.
     // const double ND_SC_DIST_THRES = 0.13; // empirically 0.1-0.2 is fine (rare false-alarms) for 20x60 polar context (but for 0.15 <, DCS or ICP fit score check (e.g., in LeGO-LOAM) should be required for robustness)
     const double ND_SC_DIST_THRES = 0.15; // 作了修改 0.3->0.9// 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
     // const double ND_SC_DIST_THRES = 0.7; // 0.4-0.6 is good choice for using with robust kernel (e.g., Cauchy, DCS) + icp fitness threshold / if not, recommend 0.1-0.15
@@ -175,6 +194,7 @@ public:
     std::vector<double> polarcontexts_timestamp_; // optional.
     std::vector<Eigen::MatrixXd> database_polarcontexts_;
     std::vector<Eigen::MatrixXd> inquiry_polarcontexts_;
+    std::vector<Eigen::MatrixXd> inquiry_polarcontexts_second_;
     std::vector<Eigen::MatrixXd> polarcontext_invkeys_;
     std::vector<Eigen::MatrixXd> polarcontext_vkeys_;
     std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
@@ -191,7 +211,8 @@ public:
     // std::vector<int> inquiry_gt_id;                                        //查询帧的对应真值id
     // std::vector<int> database_gt_id;                                        //database的对应真值id
 
-    std::vector<Eigen::Matrix4d> pose_ground_truth_copy;
+    std::vector<Eigen::Matrix4d> pose_ground_truth_copy;                        //位置真值copy
+    std::vector<std::pair<int, int> > loopclosure_gt_index_copy;                //真值id copy
     int cur_frame_id,can_frame_id;
 
 //transform matrix

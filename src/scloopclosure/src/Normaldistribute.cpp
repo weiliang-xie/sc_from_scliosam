@@ -22,46 +22,36 @@ void NDManager::NDmakeAndSaveInquiryScancontextAndKeys(pcl::PointCloud<SCPointTy
     TicToc t_making_desc;
     t_making_desc.tic();
     // cout << "[ND] make descriptor matrix and key" << endl;
-    Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
+    std::pair<MatrixXd, MatrixXd> sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
 
     step_timecost[0] += t_making_desc.toc();
     // printf("[Make descriptor] Time cost: %7.5fs\r\n", t_making_desc.toc());
 
-    Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
-    Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
+    Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc.first ); //制作ring键值 每行平均值
+    Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc.first ); //制作sector键值 每列平均值
     std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
-    inquiry_polarcontexts_.push_back( sc );     //保存描述矩阵
+    inquiry_polarcontexts_.push_back( sc.first );     //保存描述矩阵
     polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
     polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
     inquiry_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值 
     // inquiry_gt_id.push_back(frame_id); 
-    
+
+    //制作点云分布键值
+    // std::vector<int> pt_distribute_key = NDmakeDistributekeyFromScancontext(sc.second);
+
+    //建立点云分布特征哈希数据库
+    // MakeDatabaseHashForm(frame_id, pt_distribute_key);
 }
 
-//弃用
-void NDManager::NDmakeAndSaveDatabaseScancontextAndKeys(pcl::PointCloud<SCPointType> & _scan_cloud, int frame_id)
-{
-    // cout << "[ND] make descriptor matrix and key" << endl;
-    Eigen::MatrixXd sc = NDmakeScancontext(_scan_cloud); // v1     //制作NDSC描述矩阵
-    Eigen::MatrixXd ringkey = NDmakeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
-    Eigen::MatrixXd sectorkey = NDmakeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
-    std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
 
-    database_polarcontexts_.push_back( sc );     //保存描述矩阵
-    // polarcontext_invkeys_.push_back( ringkey ); //保存ring键值
-    // polarcontext_vkeys_.push_back( sectorkey ); //保存sector键值
-    database_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值  
-    // database_gt_id.push_back(frame_id);
-    
-}
-
-MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud)
+std::pair<MatrixXd, MatrixXd> NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud)
 {
 
     // main
     const int NO_POINT = -1000;
     MatrixXd desc = NO_POINT * MatrixXd::Ones(ND_PC_NUM_RING, ND_PC_NUM_SECTOR);  //创建空（无点云）的SC矩阵
+    MatrixXd desc_second = NO_POINT * MatrixXd::Ones(ND_PC_NUM_RING, ND_PC_NUM_SECTOR);  //创建空（无点云）的SC矩阵
 
     int num_pts_scan_down = _scan_cloud.points.size();
     std::vector<std::vector<std::vector<Eigen::Vector3d> > > nd_uint_point_queue
@@ -70,6 +60,7 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
     SCPointType pt;
     float azim_angle, azim_range; // wihtin 2d plane
     int ring_idx, sector_idx;
+    double min_high_pt_ = 10, max_high_pt_ = -10;
 
     for(int pt_idx = 0; pt_idx < num_pts_scan_down; pt_idx++)
     {
@@ -83,6 +74,12 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
 
         if( azim_range > ND_PC_MAX_RADIUS )                //判断点距离传感器距离是否超出最大值
             continue;
+        
+        //寻找最低、最高点
+        if(pt.z < min_high_pt_)
+            min_high_pt_ = pt.z;
+        if(pt.z > max_high_pt_)
+            max_high_pt_ = pt.z;
         
         // cout << "[ND] computer bin index" << endl;
         ring_idx = std::max( std::min( ND_PC_NUM_RING, int(ceil( (azim_range / ND_PC_MAX_RADIUS) * ND_PC_NUM_RING )) ), 1 );    //从1开始
@@ -99,8 +96,11 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
     //点云处理
     std::vector<class Voxel_Ellipsoid> cloud_voxel_eloid_(0);
 
+    //求点云分布的区间高度
+    double pt_distri_block = (max_high_pt_ - min_high_pt_) / PT_DISTRIBUTE_BLOCK_NUM;
+
     ring_idx = -1;
-    sector_idx = -1;
+    // sector_idx = -1;
     //顺序遍历体素
     for(auto &ring_it : nd_uint_point_queue)
     {
@@ -111,21 +111,40 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
             sector_idx++;
             class Voxel_Ellipsoid bin_eloid;
             if(bin_it.size()){           
-                std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
+                // std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
                 bin_eloid.point_num = bin_it.size();
                 Eigen::Vector3d center_ = {0,0,0};
 
-                //为降低耗时 简版获取均值
+                //为降低耗时 简版获取均值 点云分布 最大高度
+                int pt_distri_block_arry[PT_DISTRIBUTE_BLOCK_NUM] {};
                 for(auto bin_pt_ : bin_it)
                 {
                     center_[0] += bin_pt_[0];
                     center_[1] += bin_pt_[1];
                     center_[2] += bin_pt_[2];
+                    if(bin_pt_[2] > bin_eloid.max_high_z)
+                        bin_eloid.max_high_z = bin_pt_[2];
+                    
+                    pt_distri_block_arry[(int)floor((bin_pt_[2] - min_high_pt_) / pt_distri_block)]++;      //TODO 可以考虑过滤
                 }
                 center_ /= bin_eloid.point_num;
                 bin_eloid.center.x = center_[0];
                 bin_eloid.center.y = center_[1];
                 bin_eloid.center.z = center_[2];
+
+                for(int i = 0; i < PT_DISTRIBUTE_BLOCK_NUM; i++)
+                {
+                    if(pt_distri_block_arry[i] != 0)
+                        bin_eloid.pt_distri += pow(2,i);
+                }
+
+                //打印层次计数值
+                // cout << "[ND]   [make discriptor]  bin distribute num in layer: ";
+                // for(auto num_it : pt_distri_block_arry)
+                //     cout << num_it << ",";
+                // cout << endl; 
+
+                // cout << "[ND]   [make discriptor]  bin distribute data: " << bin_eloid.pt_distri << endl;
 
                 // bin_mean_cov_ = NDGetCovarMatrix(bin_it);
 
@@ -152,11 +171,13 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
                 //         bin_eloid.max_h_center.z = bin_it[i][2];
                 //     }
                 // }
-
+                desc_second(ring_idx,sector_idx) = bin_eloid.pt_distri;
                 if(!NDFilterVoxelellipsoid(bin_eloid)) 
                 {   
                     //体素椭球为无效模型 筛选小于一定数量的椭球
                     // bin_it.clear();
+                    //不够点云数， 填入最高的高度值
+                    desc(ring_idx,sector_idx) = bin_eloid.max_high_z;
                 }else{   
 
                     // //计算椭球扁平程度
@@ -170,7 +191,9 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
                     // }
 
                     //填充描述矩阵
-                    desc(ring_idx,sector_idx) = bin_eloid.center.z;
+                    desc(ring_idx,sector_idx) = bin_eloid.max_high_z;
+                    // desc(ring_idx,sector_idx) = atan2(double(bin_eloid.center.z), double((ring_idx+1) * ND_PC_UNIT_RINGGAP)) * 100;
+
 
                     // //测试，可视化体素内的点云分布  
                     // Eigen::Vector3d center_data;
@@ -196,14 +219,22 @@ MatrixXd NDManager::NDmakeScancontext(pcl::PointCloud<SCPointType> & _scan_cloud
     //将无点的网格描述值 = 0
     for ( int row_idx = 0; row_idx < desc.rows(); row_idx++ )
         for ( int col_idx = 0; col_idx < desc.cols(); col_idx++ )
+        {
             if( desc(row_idx, col_idx) == NO_POINT )
                 desc(row_idx, col_idx) = 0;
+            if( desc_second(row_idx, col_idx) == NO_POINT )
+                desc_second(row_idx, col_idx) = 0;
+        }
 
     // cout << "[ND]  finish make ND descriptor" << endl;
 
     // t_making_desc.toc("PolarContext making");
+    // 打印矩阵
+    // cout <<"[ND] [make descriptor] distribute matrix: " << endl;
+    // cout << desc.cast<float>() << endl;
 
-    return desc;
+    std::pair<Eigen::MatrixXd, Eigen::MatrixXd> result = {desc, desc_second};
+    return result;
 }
 
 //制作ring key
@@ -221,6 +252,169 @@ MatrixXd NDManager::NDmakeRingkeyFromScancontext( Eigen::MatrixXd &_desc )
 
     return invariant_key;
 } // NDManager::makeRingkeyFromScancontext
+
+//制作distribute key  提取每行的分布键值（将各行按序号分区，各个高度层次上若有分区内有一个体素存在点云，则该层次下整个分区存在点云，汇总各个分区的点云分布，得到键值）
+std::vector<int> NDManager::NDmakeDistributekeyFromScancontext( Eigen::MatrixXd _desc )
+{
+    vector<int> key;
+    Eigen::MatrixXd desc_ = _desc;
+    for ( int row_idx = 0; row_idx < desc_.rows(); row_idx++ )
+    {
+        int distri_key_block_arry[PT_DISTRIBUTE_BLOCK_NUM] = {};
+        for(int block_idx = 0; block_idx < DISTRIBUTE_KEY_BLOCK_NUM; block_idx++)
+        {
+            int layer = PT_DISTRIBUTE_BLOCK_NUM - 1;
+            while(layer >= 0)
+            {
+                bool layer_finish_enable = 0;
+                for(int i = 0; i < ND_PC_NUM_SECTOR / DISTRIBUTE_KEY_BLOCK_NUM; i++)
+                {
+                    if(desc_(row_idx, block_idx * DISTRIBUTE_KEY_BLOCK_NUM + i) >= pow(2,layer))
+                    {
+                        desc_(row_idx, block_idx * DISTRIBUTE_KEY_BLOCK_NUM + i) -= pow(2,layer);
+
+                        if(layer_finish_enable == 0)
+                        {
+                            distri_key_block_arry[layer] += 1;
+                            layer_finish_enable = 1;
+                        }
+                    }    
+                }
+                layer--;
+            }            
+        }
+
+        //求解每行的点云分布键值
+        int key_ = 0;
+        for(int i = 0; i < PT_DISTRIBUTE_BLOCK_NUM; i++)
+        {
+            key_ += pow(DISTRIBUTE_KEY_BLOCK_NUM + 1,i) * distri_key_block_arry[i];
+        }
+        key.push_back(key_);    //求解每行的点云分布
+
+        // //打印层次计数值
+        // cout << "[ND]   [make discriptor]  distribute key num in layer: ";
+        // for(auto num_it : distri_key_block_arry)
+        //     cout << num_it << ",";
+        // cout << endl;        
+        // cout << "[ND]   [make discriptor]  bin distribute key: " << key_ << endl;
+
+    }
+
+    // //打印键值
+    // cout << "[ND]   [make discriptor]  distribute key: ";
+    // for(auto key_it : key)
+    //     cout << key_it << ",";
+    // cout << endl;
+
+    return key;
+} 
+
+//保存帧索引，保存key值
+void NDManager::MakeDatabaseHashForm(int frame_id, vector<int> distribute_key)
+{   
+    //填入hash
+    for(auto eigen_key : distribute_key)
+    {
+        // if(eigen_key != -1)
+        {
+            //判断id_bin内是否已有相同id
+            std::vector<int> his_frame_id = GetHashFrameIDCustom(eigen_key);
+            if(his_frame_id.empty() == 0)
+            {
+                for(auto his_id_it = his_frame_id.begin(); his_id_it != his_frame_id.end(); ++his_id_it)
+                {
+                    if(*his_id_it == frame_id)
+                        break;
+                    else if(his_id_it == his_frame_id.end() - 1)
+                    {
+                        distribute_map[eigen_key].push_back(frame_id);         //制作hash
+                    }
+                }
+            }
+            else
+            {
+                distribute_map[eigen_key].push_back(frame_id);         //制作hash
+            }
+
+        }
+    }
+    //保存当前帧的key值
+    distribute_frame_key.push_back(distribute_key);
+}
+
+//输入键值检索hash表内的帧ID(vector<int>格式) 输出：如果有找到数据，则输出vector<int> 如果没找到，输出空的vector
+std::vector<int> NDManager::GetHashFrameIDCustom(int key)
+{
+    auto eigen_it = distribute_map.find(key);
+    if(eigen_it != distribute_map.end())
+        return eigen_it->second;
+    return std::vector<int>();
+}
+
+//回环检测 提取hash中投票最多的id
+std::vector<size_t> NDManager::SearchCandidateIDwithHash(std::vector<int> cur_key)
+{
+    static int max_frame_id = distribute_frame_key.size();
+    int loop_id { -1 }; 
+    //是否满足数量要求
+
+
+    vector<int> vote_num(max_frame_id, 0);          //存放投票数量的结构体，用于进一步判断
+    for(auto it : cur_key)
+    {
+        std::vector<int> can_id_queue;
+        //前后寻找最近距离的key 这里就要排除紧邻的id
+        // for(int eigen_key_shift = 0; eigen_key_shift < 80; eigen_key_shift++) 
+        {
+            // key_it +=  ((-1) ^ eigen_key_shift) * eigen_key_shift;
+            can_id_queue = GetHashFrameIDCustom(it);
+            if(can_id_queue.empty() == 0)
+            {
+                //ID投票
+                for(auto can_id_it : can_id_queue)
+                {
+                    if(can_id_it < max_frame_id)
+                        vote_num[can_id_it]++;
+                    // cout << "[EL]  vote id: " << can_id_it << " one ticket" << endl;
+                }
+                // cout << endl;
+            }
+        }
+    }
+    // cout << "[EL]  finish vote all the frame" << endl;
+
+    //获取候选Frame index
+    std::vector<size_t> can_index;
+    std::vector<int> can_vote_num;
+    for(int i = 0; i < vote_num.size(); i++)
+    {
+        auto max_vote_it = std::max_element(vote_num.begin(), vote_num.end());  //寻找投票ID中的最大值
+
+        //判断是否为回环检测区域内
+        int max_id = std::distance(vote_num.begin(), max_vote_it);
+        if(max_id < max_frame_id)
+        {
+            can_index.push_back(max_id);
+            can_vote_num.push_back(*max_vote_it);
+        }
+        //删除最大值
+        *max_vote_it = -1;
+        if(can_index.size() == ND_NUM_CANDIDATES_FROM_TREE)
+            break;
+    }
+
+
+    //打印测试
+    cout << "[ND]  candidates id:";
+    for(int i = 0; i < can_index.size(); i++)
+    {
+        cout<< " " << can_index[i];
+    }
+    cout << endl;
+
+    return can_index;    
+}
 
 //制作sector key
 MatrixXd NDManager::NDmakeSectorkeyFromScancontext( Eigen::MatrixXd &_desc )
@@ -255,7 +449,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         return result; // Early return 
     }
 
-    auto curr_key = inquiry_polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
+    auto cur_key = inquiry_polarcontext_invkeys_mat_.back(); // current observation (query)    //取出vector格式的ring键值
     auto curr_desc = inquiry_polarcontexts_.back(); // current observation (query)              //取出描述矩阵,最近的
     auto curr_veloid = cloud_voxel_eloid.back();                                        //取出体素椭球序列,最近的
 
@@ -267,7 +461,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
         t_tree_construction.tic();
 
         polarcontext_invkeys_to_search_.clear();
-        polarcontext_invkeys_to_search_.assign( inquiry_polarcontext_invkeys_mat_.begin(), inquiry_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的30个描述符
+        polarcontext_invkeys_to_search_.assign( inquiry_polarcontext_invkeys_mat_.begin(), inquiry_polarcontext_invkeys_mat_.end() - ND_NUM_EXCLUDE_RECENT ) ; //去除最近的50个描述符
 
         //复位polarcontext_tree_指针，并开辟一段动态内存用于存放 同时构造出来的KDTreeVectorOfVectorsAdaptor类
         polarcontext_tree_.reset(); 
@@ -294,11 +488,47 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
     nanoflann::KNNResultSet<float> knnsearch_result( ND_NUM_CANDIDATES_FROM_TREE );
     knnsearch_result.init( &candidate_indexes[0], &out_dists_sqr[0] );
-    polarcontext_tree_->index->findNeighbors( knnsearch_result, &curr_key[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
+    polarcontext_tree_->index->findNeighbors( knnsearch_result, &cur_key[0] /* query */, nanoflann::SearchParams(10) );    //传入当前描述符 kd树搜索
     // t_tree_search.toc("Tree search");
         
     step_timecost[2] += t_tree_search.toc();
     // printf("[Tree search] Time cost: %7.5fs\r\n", t_tree_search.toc());
+
+    // 测试 自制带真值的候选帧集 结果 与sc一模一样
+    // int gt_loop_id = -1;
+    // for(int i = 0; i < loopclosure_gt_index_copy.size(); i++)
+    // {
+    //     if(loopclosure_gt_index_copy[i].first == int(inquiry_polarcontexts_.size() - 1))
+    //     {
+    //         gt_loop_id = loopclosure_gt_index_copy[i].second;
+    //         break;
+    //     }
+    // }
+
+    // if(gt_loop_id >= 0)
+    // {
+    //     // candidate_indexes.clear();
+    //     // candidate_indexes.assign(ND_NUM_CANDIDATES_FROM_TREE, 0);
+    //     for(int i = 0; i < candidate_indexes.size(); i++)
+    //     {
+    //         if(candidate_indexes[i] == gt_loop_id)
+    //             break;
+    //         if(i == candidate_indexes.size() - 1)
+    //         {
+    //             candidate_indexes[0] = gt_loop_id;
+    //             cout << "cur id: " << inquiry_polarcontexts_.size() - 1 << " can id replace: " << gt_loop_id << endl;
+    //         }
+    //     }
+    //     // for(int i = 1; i < candidate_indexes.size(); i++)
+    //     // {
+    //     //     if(inquiry_polarcontexts_.size() - ND_NUM_EXCLUDE_RECENT - i == 0)
+    //     //         break;  
+    //     //     candidate_indexes[i] = inquiry_polarcontexts_.size() - ND_NUM_EXCLUDE_RECENT - i;
+    //     // }
+    // }
+
+    //点云分布 hash vote 回环检测
+    // candidate_indexes = SearchCandidateIDwithHash(distribute_frame_key.back());
 
 
     /* 
@@ -308,7 +538,11 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
     for ( int candidate_iter_idx = 0; candidate_iter_idx < ND_NUM_CANDIDATES_FROM_TREE; candidate_iter_idx++ )
     {
         MatrixXd polarcontext_candidate = inquiry_polarcontexts_[ candidate_indexes[candidate_iter_idx] ];
-        std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
+        // std::vector<class Voxel_Ellipsoid> voxel_eloid_candidate = cloud_voxel_eloid[ candidate_indexes[candidate_iter_idx] ];
+
+        //测试 调整矩阵
+        // curr_desc = NDAdjustDescriptor(NDGetGtTranslateVector(candidate_indexes[candidate_iter_idx], inquiry_polarcontexts_.size() - 1), curr_desc);
+
         std::pair<double, int> sc_dist_result = NDdistanceBtnScanContext( curr_desc, polarcontext_candidate );    //返回相似度值和列向量偏移量
         // cur_frame_id = polarcontexts_.size() - 1;
         // can_frame_id = candidate_indexes[candidate_iter_idx];
@@ -357,10 +591,79 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
 } // NDManager::NDdetectLoopClosureID
 
+//测试 调整描述矩阵 匹配与候选相差距离大于体素一半时，对矩阵调整相差方向上的描述值
+Eigen::Vector2d NDManager::NDGetGtTranslateVector(int can_id, int src_id)
+{
+    Eigen::Matrix4d can_pose = pose_ground_truth_copy[can_id];
+    Eigen::Matrix4d src_pose = pose_ground_truth_copy[src_id];
+
+    Eigen::Matrix4d trans_ = can_pose * src_pose.inverse();
+
+    Eigen::Vector2d translate_ = trans_.col(3).segment(0,2);
+
+    cout << "[TEST]     [get translate] toward is: " << translate_.transpose() << endl;
+    return translate_;
+}
+Eigen::MatrixXd NDManager::NDAdjustDescriptor(Eigen::Vector2d can_toward, Eigen::MatrixXd src_matrix)
+{
+    Eigen::MatrixXd result;
+    result = src_matrix;
+    //小于体素的一半，不考虑调整
+    if(can_toward.norm() < ND_PC_UNIT_RINGGAP / 2.0)
+        return result;
+
+    int ring_idx, sector_idx;
+    double azim_range, azim_angle;
+    azim_angle = xy2theta(can_toward[0], can_toward[1]);              //输出theta角  
+    sector_idx = std::max( std::min( ND_PC_NUM_SECTOR, int(ceil( (azim_angle / 360.0) * ND_PC_NUM_SECTOR )) ), 1 );
+
+    int i = 0;
+    while(i <= 4)
+    {
+        cout << (sector_idx - 1 + i + ND_PC_NUM_SECTOR) % ND_PC_NUM_SECTOR << endl;
+        cout << (sector_idx - 1 + i + (ND_PC_NUM_SECTOR / 2)) % ND_PC_NUM_SECTOR << endl;
+
+        Eigen::VectorXd src_toward_col = src_matrix.col((sector_idx - 1 + i + ND_PC_NUM_SECTOR) % ND_PC_NUM_SECTOR);
+        Eigen::VectorXd src_back_col = src_matrix.col((sector_idx - 1 + i + (ND_PC_NUM_SECTOR / 2)) % ND_PC_NUM_SECTOR);
+
+        Eigen::VectorXd new_src_toward_col, new_src_back_col;
+        new_src_toward_col.resize(ND_PC_NUM_RING);
+        new_src_back_col.resize(ND_PC_NUM_RING);
+        new_src_toward_col.segment(0,15) = src_toward_col.segment(1,15);
+        new_src_back_col[0] = src_toward_col[0];
+        new_src_toward_col[15] = src_toward_col[15];
+        new_src_back_col.segment(1,15) = src_back_col.segment(0,15);
+ 
+        result.col((sector_idx - 1 + i + ND_PC_NUM_SECTOR) % ND_PC_NUM_SECTOR).segment(0,ND_PC_NUM_RING) = new_src_toward_col.segment(0,ND_PC_NUM_RING);
+        result.col((sector_idx - 1 + i + ND_PC_NUM_SECTOR / 2) % ND_PC_NUM_SECTOR).segment(0,ND_PC_NUM_RING) = new_src_back_col.segment(0,ND_PC_NUM_RING);
+
+        //来回处理两边的
+        if(i == 0)
+            i++;
+        else{
+            if(i < 0)
+            {   
+                i *= -1;
+                i++;
+            }
+            else
+                i *= -1;
+        }
+    }
+
+    cout << "[TEST]     [get adjustmatrix] finish! " << endl;
+    return result;
+}
+
 double NDManager::NDdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
 {
     int num_eff_cols = 0; // i.e., to exclude all-nonzero sector
     double sum_sector_similarity = 0;
+
+    // //与行偏移配合，去除0行和最远1行，测试（全0版）
+    // _sc1.row(0).setZero(); _sc2.row(0).setZero();
+    // _sc1.row(_sc1.rows() - 1).setZero(); _sc2.row(_sc2.rows() - 1).setZero();
+
     for ( int col_idx = 0; col_idx < _sc1.cols(); col_idx++ )
     {
         VectorXd col_sc1 = _sc1.col(col_idx);
@@ -369,6 +672,14 @@ double NDManager::NDdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
         if( (col_sc1.norm() == 0) | (col_sc2.norm() == 0) )
             continue; // don't count this sector pair. 
 
+        // //加权弱化远距离编码值 测试
+        // double uint_weight = 1.0 / double((col_sc1.size() + 1) * col_sc1.size() / 2);
+        // for(int i = 0; i < col_sc1.size(); i++)
+        // {
+        //     col_sc1[i] *= (col_sc1.size() - i) * uint_weight;
+        //     col_sc2[i] *= (col_sc1.size() - i) * uint_weight;
+        // }
+
         double sector_similarity = col_sc1.dot(col_sc2) / (col_sc1.norm() * col_sc2.norm());    //余弦
         // double sector_similarity = (col_sc1 - col_sc2).norm();                               //欧式距离
 
@@ -376,6 +687,7 @@ double NDManager::NDdistDirectSC ( MatrixXd &_sc1, MatrixXd &_sc2 )
         num_eff_cols = num_eff_cols + 1;
     }
     
+    if(num_eff_cols == 0) num_eff_cols = _sc1.cols();
     double sc_sim = sum_sector_similarity / num_eff_cols;
     return 1.0 - sc_sim;
     // return sc_sim;
@@ -428,6 +740,26 @@ std::pair<double, int> NDManager::NDdistanceBtnScanContext( MatrixXd &_sc1, Matr
     for ( int num_shift: shift_idx_search_space )
     {
         MatrixXd sc2_shifted = circshift(_sc2, num_shift);  //列位移函数
+
+        // //行偏移 测试
+        // double cur_sc_dist = 10000000;
+        // for(int i = -1; i < 2; i++)
+        // {
+        //     MatrixXd sc2_shifted_ringshifted = ringshift(sc2_shifted, i);
+        //     //行偏移对应清空，防止出现跨越的情况
+        //     if(i == 1)
+        //         sc2_shifted_ringshifted.row(0) = sc2_shifted.row(0);
+        //     else if(i == -1)
+        //         sc2_shifted_ringshifted.row(sc2_shifted.rows() - 1) = sc2_shifted.row(sc2_shifted.rows() - 1);
+
+        //     double cur_sc_dist_ringshifted = NDdistDirectSC( _sc1, sc2_shifted_ringshifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
+        //     if( cur_sc_dist_ringshifted < cur_sc_dist )
+        //     {
+        //         cur_sc_dist = cur_sc_dist_ringshifted;
+        //     }
+
+        // }
+
         double cur_sc_dist = NDdistDirectSC( _sc1, sc2_shifted ); //计算相似度，计算各个列向量的余弦距离的和的平均值（去除行列式为0的部分）
         if( cur_sc_dist < min_sc_dist )
         {

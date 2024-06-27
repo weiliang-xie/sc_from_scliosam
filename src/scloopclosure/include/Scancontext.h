@@ -56,6 +56,7 @@ float rad2deg(float radians);
 // sc param-independent helper functions 
 float xy2theta( const float & _x, const float & _y );
 MatrixXd circshift( MatrixXd &_mat, int _num_shift );
+MatrixXd ringshift( MatrixXd &_mat, int _num_shift );
 std::vector<float> eig2stdvec( MatrixXd _eigmat );
 
 
@@ -73,7 +74,6 @@ public:
     std::pair<double, int> distanceBtnScanContext ( MatrixXd &_sc1, MatrixXd &_sc2 ); // "D" (eq 6) in the original paper (IROS 18)
 
     // User-side API
-    void makeAndSaveDatabaseScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id);
     void makeAndSaveInquiryScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id);
 
     std::pair<int, float> detectLoopClosureID( void ); // int: nearest node index, float: relative yaw  
@@ -92,7 +92,7 @@ public:
     const double PC_UNIT_RINGGAP = PC_MAX_RADIUS / double(PC_NUM_RING);                 //径向单元长度
 
     // tree
-    const int    NUM_EXCLUDE_RECENT = 30; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
+    const int    NUM_EXCLUDE_RECENT = 50; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
     const int    NUM_CANDIDATES_FROM_TREE = 20; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres

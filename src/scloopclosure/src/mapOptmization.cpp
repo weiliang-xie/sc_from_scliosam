@@ -2,21 +2,7 @@
 
 #include "lio_sam/cloud_info.h"
 
-#include <gtsam/geometry/Rot3.h>
-#include <gtsam/geometry/Pose3.h>
-#include <gtsam/slam/dataset.h>
-#include <gtsam/slam/PriorFactor.h>
-#include <gtsam/slam/BetweenFactor.h>
-#include <gtsam/navigation/GPSFactor.h>
-#include <gtsam/navigation/ImuFactor.h>
-#include <gtsam/navigation/CombinedImuFactor.h>
-#include <gtsam/nonlinear/NonlinearFactorGraph.h>
-#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
-#include <gtsam/nonlinear/Marginals.h>
-#include <gtsam/nonlinear/Values.h>
-#include <gtsam/inference/Symbol.h>
 
-#include <gtsam/nonlinear/ISAM2.h>
 
 // #include <pcl/registration/ndt.h>
 
@@ -25,39 +11,6 @@
 #include "Mixdescriptor.h"
 #include "Ellipsoiddescriptor.h"
 
-
-using namespace gtsam;
-
-using symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
-using symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
-using symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
-using symbol_shorthand::G; // GPS pose
-
-
-void saveOptimizedVerticesKITTIformat(gtsam::Values _estimates, std::string _filename)
-{
-    using namespace gtsam;
-
-    // ref from gtsam's original code "dataset.cpp"
-    std::fstream stream(_filename.c_str(), fstream::out);
-
-    for(const auto& key_value: _estimates) {
-        auto p = dynamic_cast<const GenericValue<Pose3>*>(&key_value.value);
-        if (!p) continue;
-
-        const Pose3& pose = p->value();
-
-        Point3 t = pose.translation();
-        Rot3 R = pose.rotation();
-        auto col1 = R.column(1); // Point3
-        auto col2 = R.column(2); // Point3
-        auto col3 = R.column(3); // Point3
-
-        stream << col1.x() << " " << col2.x() << " " << col3.x() << " " << t.x() << " "
-               << col1.y() << " " << col2.y() << " " << col3.y() << " " << t.y() << " "
-               << col1.z() << " " << col2.z() << " " << col3.z() << " " << t.z() << std::endl;
-    }
-}
 
 
 /*
@@ -95,12 +48,6 @@ class mapOptimization : public ParamServer
 
 public:
 
-    // gtsam
-    NonlinearFactorGraph gtSAMgraph;
-    Values initialEstimate;
-    Values optimizedEstimate;
-    ISAM2 *isam;
-    Values isamCurrentEstimate;
     Eigen::MatrixXd poseCovariance;
 
     ros::Publisher pubLaserCloudSurround;
@@ -191,9 +138,6 @@ public:
     multimap<int, int> SCloopIndexContainer; // from new to old // giseop 
 
     vector<pair<int, int>> loopIndexQueue;  //回环序号队列容器
-    vector<gtsam::Pose3> loopPoseQueue;
-    // vector<gtsam::noiseModel::Diagonal::shared_ptr> loopNoiseQueue; // Diagonal <- Gausssian <- Base
-    vector<gtsam::SharedNoiseModel> loopNoiseQueue; // giseop for polymorhpisam (Diagonal <- Gausssian <- Base)
 
     deque<std_msgs::Float64MultiArray> loopInfoVec;
 
@@ -227,7 +171,7 @@ public:
     std::string MIXsaveNodePCDDirectory;
 
     //xwl 修改添加
-    string data_set_sq = "02";
+    string data_set_sq = "00";
     int16_t data_set_frame_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
     int16_t laser_cloud_frame_number;   //实时更新的当前帧序号，在原始的数据bag包中 = 帧id
     int16_t eld_laser_cloud_frame_number;   //实时更新的当前帧id（转换后） 用于真值数据bag包
@@ -236,7 +180,7 @@ public:
     std::vector<Eigen::Matrix4d> pose_ground_truth;
     std::vector<Eigen::Matrix4d> pose_final_change;
     pcl::PointCloud<PointTypePose>::Ptr cloudkey; 
-    std::vector<std::pair<int, int> > loopclosure_gt_index;  //回环真值id队列
+    std::vector<std::pair<int, int> > loopclosure_gt_index;  //回环真值id队列  first是当前回环帧，second是历史匹配帧
     ofstream prFile;                                                    //pr文件流定义
     ofstream File;                                                      //通用保存文件流定义
     string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_center.csv";    //SC pr数据储存地址
@@ -248,10 +192,6 @@ public:
 public:
     mapOptimization()
     {
-        ISAM2Params parameters;
-        parameters.relinearizeThreshold = 0.1;
-        parameters.relinearizeSkip = 1;
-        isam = new ISAM2(parameters);
 
         pubKeyPoses                 = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/trajectory", 1);
         pubLaserCloudSurround       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/map_global", 1);
@@ -329,6 +269,7 @@ public:
         getloopclosuregt();     //获取回环真值
 
         ndManager.pose_ground_truth_copy.assign(pose_ground_truth.begin(),pose_ground_truth.end());
+        ndManager.loopclosure_gt_index_copy.assign(loopclosure_gt_index.begin(), loopclosure_gt_index.end());
     }
 
     void allocateMemory()
@@ -380,35 +321,6 @@ public:
         matP.setZero();
     }
 
-    void writeVertex(const int _node_idx, const gtsam::Pose3& _initPose)
-    {
-        gtsam::Point3 t = _initPose.translation();
-        gtsam::Rot3 R = _initPose.rotation();
-
-        std::string curVertexInfo {
-            "VERTEX_SE3:QUAT " + std::to_string(_node_idx) + " "
-            + std::to_string(t.x()) + " " + std::to_string(t.y()) + " " + std::to_string(t.z())  + " " 
-            + std::to_string(R.toQuaternion().x()) + " " + std::to_string(R.toQuaternion().y()) + " " 
-            + std::to_string(R.toQuaternion().z()) + " " + std::to_string(R.toQuaternion().w()) };
-
-        // pgVertexSaveStream << curVertexInfo << std::endl;
-        vertices_str.emplace_back(curVertexInfo);
-    }
-    
-    void writeEdge(const std::pair<int, int> _node_idx_pair, const gtsam::Pose3& _relPose)  //将变量转换成字符串并以一定格式存入edges_str容器中
-    {
-        gtsam::Point3 t = _relPose.translation();
-        gtsam::Rot3 R = _relPose.rotation();
-
-        std::string curEdgeInfo {
-            "EDGE_SE3:QUAT " + std::to_string(_node_idx_pair.first) + " " + std::to_string(_node_idx_pair.second) + " "
-            + std::to_string(t.x()) + " " + std::to_string(t.y()) + " " + std::to_string(t.z())  + " " 
-            + std::to_string(R.toQuaternion().x()) + " " + std::to_string(R.toQuaternion().y()) + " " 
-            + std::to_string(R.toQuaternion().z()) + " " + std::to_string(R.toQuaternion().w()) };
-
-        // pgEdgeSaveStream << curEdgeInfo << std::endl;
-        edges_str.emplace_back(curEdgeInfo);    //与push_back()基本一致
-    }
 
     //加载保存的描述矩阵数据函数 输入矩阵数据文件夹 返回矩阵数据
     template<typename T>
@@ -562,6 +474,92 @@ public:
         std::vector<class Voxel_Ellipsoid>  cur_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/003362.csv");
         std::vector<class Voxel_Ellipsoid>  can_eloid = test_load_csv_voxel_eloid("/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMVoxelEllipsoid_test/CloudData/002417.csv");
         
+        
+        // cout << "cur_eloid num:" << cur_eloid.size() << endl;
+        // cout << "can_eloid num:" << can_eloid.size() << endl;
+
+
+        // Eigen::Vector3d a =  ndManager.NDDistMergeVoxelellipsoid(cur_eloid,can_eloid,1);
+        // Eigen::Vector3d pre_center_vector = ndManager.MatchKeyVoxelEllipsoid(cur_eloid,can_eloid);
+        // double b = ndManager.NDDistVoxeleloid(cur_eloid,can_eloid,1);
+        // cout << "avg center:" << endl;
+        // cout << pre_center_vector << endl;
+        // Eigen::Vector3d gt_center_vector = {pose_ground_truth[cur](0,3) - pose_ground_truth[can](0,3),
+        //                                     pose_ground_truth[cur](1,3) - pose_ground_truth[can](1,3),
+        //                                     pose_ground_truth[cur](2,3) - pose_ground_truth[can](2,3)};
+        
+        // double cos_vector = (1 - ((pre_center_vector.dot(gt_center_vector)) / (pre_center_vector.norm() * gt_center_vector.norm())));
+        // cout << "gt center vector: " << endl;
+        // cout << gt_center_vector << endl;
+        // cout << "cos error: " << cos_vector << endl;
+
+        //平移矩阵获取验证
+        // Eigen::Vector3d translation = ndManager.NDGetTranslationMatrix(cur_eloid,can_eloid,0);
+
+        // cout << "translation: " << BulidingEllipsoidModel()ndl << translation << endl;
+
+        // Eigen::Vector3d gt_center_vector = {pose_ground_truth[can](0,3) - pose_ground_truth[cur](0,3),
+        //                                     pose_ground_truth[can](1,3) - pose_ground_truth[cur](1,3),
+        //                                     pose_ground_truth[can](2,3) - pose_ground_truth[cur](2,3)};
+
+        // double cos_vector = rad2deg(acos((translation.dot(gt_center_vector)) / (translation.norm() * gt_center_vector.norm())));
+        // double dist = sqrt((translation[0] - gt_center_vector[0]) * (translation[0] - gt_center_vector[0]) + 
+        //                    (translation[1] - gt_center_vector[1]) * (translation[1] - gt_center_vector[1]) +
+        //                    (translation[2] - gt_center_vector[2]) * (translation[2] - gt_center_vector[2]));
+
+        // double dist_self = sqrt((translation[0]) * (translation[0]) + 
+        //                         (translation[1]) * (translation[1]) +
+        //                         (translation[2]) * (translation[2]));
+        // cout << "gt center vector: " << endl;
+        // cout << gt_center_vector << endl;
+        // cout << "cos error: " << cos_vector << endl;
+        // cout << "dis error: " << dist << endl;
+        // cout << "dis_self: " << dist_self << endl;
+
+        // ndManager.can_frame_id = 3362;
+        // ndManager.cur_frame_id = 3362;
+        // double nd_dist = ndManager.NDDistVoxeleloidPlace(cur_eloid, cur_eloid, 0, translation);
+        // cout << "similarity: " << nd_dist << endl;
+
+        // ndManager.NDmakeScancontext(*cloud);
+
+
+        //eloid hash测试
+        // elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
+        // auto it = elmanager.eloid_eigen_map.find(250821);
+        // std::cout << "frame_id: " << it->second.back() << endl;
+        // auto it1 = elmanager.eloid_eigen_map.find(250822);
+        // if(it1 != elmanager.eloid_eigen_map.end())
+        //     std::cout << "frame_id: " << it1->second.back() << endl;
+        // else 
+        //     std::cout << "frame_id is non-existent " << endl;
+
+        // //eloid key 对比测试
+        // elmanager.MakeEllipsoidDescriptor(*cur_cloud,0);
+        // elmanager.MakeEllipsoidDescriptor(*similar_cloud,1);
+        // elmanager.MakeEllipsoidDescriptor(*dissimilar_cloud,2);
+
+        // //key数据
+        // for(auto frame_key : elmanager.frame_eloid_key)
+        // {
+        //     for(auto key : frame_key)
+        //     {
+        //         cout << key << ",";
+        //     }
+        //     cout << endl;
+        // }
+
+        // //椭球数据
+        // for(auto frame_eloid_it : elmanager.database_frame_eloid)
+        // {
+        //     for(auto nonground_eloid_it : frame_eloid_it.nonground_voxel_eloid)
+        //     {
+        //         // cout << nonground_eloid_it.num_exit << ",";
+        //     }
+        //     // cout << endl;
+        // }
+
+
         // cout << "cur_eloid num:" << cur_eloid.size() << endl;
         // cout << "can_eloid num:" << can_eloid.size() << endl;
 
@@ -652,10 +650,10 @@ public:
         // // pcl::visualization::PointCloudColorHandlerCustom<PointType> green(*cloud)
 
         //转移矩阵测试
-        elmanager.DivideVoxel(*cur_cloud);
-        Frame_Ellipsoid eloid_1 = elmanager.BulidingEllipsoidModel();
-        elmanager.DivideVoxel(*similar_cloud);
-        Frame_Ellipsoid eloid_2 = elmanager.BulidingEllipsoidModel();
+        // elmanager.DivideVoxel(*cur_cloud);
+        // Frame_Ellipsoid eloid_1 = elmanager.BulidingEllipsoidModel();
+        // elmanager.DivideVoxel(*similar_cloud);
+        // Frame_Ellipsoid eloid_2 = elmanager.BulidingEllipsoidModel();
 
         // Eigen::Matrix4d transform_matrix = elmanager.MakeFeaturePointandGetTransformMatirx(eloid_1, eloid_2);
         // Eigen::Vector3d gt_translate_center_vector = {pose_ground_truth[3304](0,3) - pose_ground_truth[2356](0,3),
@@ -674,7 +672,10 @@ public:
         // Eigen::Isometry2d est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[3304], pose_ground_truth[2356], transform_matrix);
 
         // double err_vec[3] = {est_err.translation().x(), est_err.translation().y(), std::atan2(est_err(1, 0), est_err(0, 0))};
-        // printf(" Error: dx=%f, dy=%f, dtheta=%f\n", err_vec[0], err_vec[1], err_vec[2]);        
+        // printf(" Error: dx=%f, dy=%f, dtheta=%f\n", err_vec[0], err_vec[1], err_vec[2]);  
+
+        //点云分布特征测试
+        // ndManager.NDmakeAndSaveInquiryScancontextAndKeys(*cur_cloud,3304);
 
     }
 
@@ -764,7 +765,8 @@ public:
             // cout << "cur index: " << cur_index << endl;
             if(cur_index < 50) continue;  //前50帧不进行回环判断
             Eigen::Matrix4d pose_matrix;
-            double distance = 0;
+            double min_distance = 10000000;
+            double loop_id = 0;
             double cur_x, cur_y;
 
             // pose_matrix = *it;
@@ -772,32 +774,39 @@ public:
             cur_y = pose_ground_truth[i](2,3);
 
 
-            for(int i = 0; i < cur_index - 50; i++)
+            for(int j = 0; j < cur_index - 50; j++)
             {
                 double his_x, his_y;
-                his_x = pose_ground_truth[i](0,3);
-                his_y = pose_ground_truth[i](2,3);
+                his_x = pose_ground_truth[j](0,3);
+                his_y = pose_ground_truth[j](2,3);
 
                 // distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y) + (his_z-cur_z)*(his_z-cur_z));
-                distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
+                double distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
                 // cout << "cur and his distance: " << distance << endl;
-                if (distance <= 5.0)
+                if(distance < min_distance)
                 {
-                    std::pair<int, int> gt_id =  {cur_index, i};
-                    loopclosure_gt_index.push_back(gt_id);
-                    break; 
+                    min_distance = distance;
+                    loop_id = j;
                 }
+
+            }
+
+            if (min_distance <= 5.0)
+            {
+                std::pair<int, int> gt_id =  {cur_index, loop_id};
+                loopclosure_gt_index.push_back(gt_id); 
             }
         }
         cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
 
-        // // 打印真值ID
-        // for(auto &gt_data : loopclosure_gt_index)
-        // {
-        //     cout << "cur id: " << gt_data.first << "  his id: " << gt_data.second << endl;
-        // }
-        // cout <<endl;
-        // cout << "finish get loop closure gt" << endl;
+        // 打印真值ID
+        for(auto &gt_data : loopclosure_gt_index)
+        {
+            cout << "cur id: " << gt_data.first << "  his id: " << gt_data.second << endl;
+        }
+        cout <<endl;
+        cout << "finish get loop closure gt" << endl;
+
     }
 
 
@@ -810,7 +819,7 @@ public:
     {
         std::vector<std::pair<double,double>> pr_data_queue;
         int tp,fp,fn,pre_loop_num;
-        double presession, recall;
+        double precision, recall,f1;
         double value;
         double min_dist = 100000;
         double max_dist = 0.00001;
@@ -822,7 +831,7 @@ public:
         //寻找dist最大值 最小值
         for(auto pre_pair = loopclosure_id_and_dist.begin(); pre_pair != loopclosure_id_and_dist.end(); ++pre_pair)
         {
-            cout << "index: " << pre_pair->first << "  dist: " << pre_pair->second << endl;
+            // cout << "index: " << pre_pair->first << "  dist: " << pre_pair->second << endl;
             min_dist = pre_pair->second < min_dist ? pre_pair->second : min_dist;
             max_dist = pre_pair->second > max_dist ? pre_pair->second : max_dist;
         }
@@ -859,19 +868,20 @@ public:
 
             fn = loopclosure_gt_index.size() - tp;
 
-            cout << "tp: " << tp << "   fp: " << fp << endl;
-            cout << "loop closure pre num:  " << pre_loop_num << endl;
+            // cout << "tp: " << tp << "   fp: " << fp << endl;
+            // cout << "loop closure pre num:  " << pre_loop_num << endl;
 
-            presession = (static_cast<double>(tp)/(tp + fp));
+            precision = (static_cast<double>(tp)/(tp + fp));
             recall = (static_cast<double>(tp)/(tp + fn));
+            f1 = 2.0*tp / (2.0*tp + fp + fn);
             tp = 0;
             fp = 0;
             pre_loop_num = 0;
 
-            std::pair<double,double> pr_data = {recall,presession};
+            std::pair<double,double> pr_data = {recall,precision};
             pr_data_queue.push_back(pr_data);
 
-            cout << "presession: " << presession << "   recall: " << recall << endl;
+            cout << "precision: " << precision << "   recall: " << recall << " f1: " << f1 << endl;
 
         }
             cout << "all cloud frame num:   " << laser_cloud_frame_number + 1 << endl;
@@ -889,7 +899,7 @@ public:
         //写入csv文件
         prFile.open(pr_data_file_name, ios::out);
         // 写入标题行
-        prFile << "recall" << ',' << "presession" << endl;
+        prFile << "recall" << ',' << "precision" << endl;
 
         for(auto prdata = pr_data_queue.begin(); prdata != pr_data_queue.end(); ++prdata)
         {
@@ -972,48 +982,6 @@ public:
         pcl::io::savePCDFileBinary(saveMapPCDDirectory + data_set_sq + "/" + cur_frame_idx + ".pcd", *thisRawCloudFrame);
     }
 
-    //建立地图数据库（记录特定的点云帧） 去除真值帧
-    void MakeMapFeatureBase()
-    {
-        static int frame_gap = 4;   //记录间隔的多少帧
-        for(int i = 0; i < data_set_frame_num; i++)
-        {
-            int idx_loop_enable = 0;
-            //剔除回环真值帧    
-            for(auto gt_it : loopclosure_gt_index)
-            {
-                if(i == gt_it.first)
-                    idx_loop_enable = 1;
-            }
-
-            if(idx_loop_enable == 0 && i % frame_gap == 0)
-            {
-                std::string frame_idx = padZeros(i);
-                pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
-                pcl::io::loadPCDFile<PointType>(saveMapPCDDirectory + data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
-                //eloid部分数据库制作
-                // elmanager.MakeDatabaseEllipsoidDescriptor(*_rawcloud, i);                                   //使用点云进行描述符制作
-                //SC部分数据库制作
-                // scManager.makeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);                                        //使用点云进行描述符制作
-                //ND数据库制作
-                // ndManager.NDmakeAndSaveDatabaseScancontextAndKeys(*_rawcloud, i);
-
-            }
-  
-        }
-        // cout << "[ELD]  finish making feature data base" << "  num of feature frame is: " << elmanager.database_frame_eloid.size() << endl;
-        // cout << "[SC]  finish making feature data base" << "  num of feature frame is: " << scManager.database_polarcontext_invkeys_mat_.size() << endl;
-        // cout << "[ND]  finish making feature data base" << "  num of feature frame is: " << ndManager.database_polarcontext_invkeys_mat_.size() << endl;
- 
-        //体素分割效果测试数据保存
-        // string error_file1 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_num.csv";
-        // savedata(error_file1, "segnum", "orinum", elmanager.frame_seg_ori_num);
-
-        // string error_file2 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_little_num.csv";
-        // savedata(error_file2, "seg_little_num", "ori_little_num", elmanager.frame_seg_ori_littlevoxel_num);
-        // string error_file3 = savePCDDirectory + "ELD/others/nd_kitti_" + "00" + "_segment_ori_valid_num.csv";
-        // savedata(error_file3, "seg_valid_num", "ori_valid_num", elmanager.frame_seg_ori_validvoxel_num);
-    }
 
     //提取真值点云帧
     void GetGroundtrueFrame()
@@ -1076,6 +1044,17 @@ public:
 
         laserCloudRaw->points.clear();
 
+        //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
+        if(laser_cloud_frame_number == data_set_frame_num - 1)       //因为bag包会少录制几帧
+        {
+            makeandsaveprcurve();
+
+            // string name_cos = "cos_error";
+            // string name_dist = "cos_error";
+
+            // string error_file = savePCDDirectory + "ND/others/nd_kitti_" + data_set_sq + "_translation_error.csv";
+            // savedata(error_file, name_cos, name_dist,error_arry);
+        }
     }
 
     // void laserCloudInfoHandler(const lio_sam::cloud_infoConstPtr& msgIn)    //ros订阅信息接收回调函数 订阅特征提取cpp发送的点云数据
@@ -1142,8 +1121,7 @@ public:
         //     cout << "laser cloud is empty!" << endl;    //有效        
 
         //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
-        int16_t gt_bag_num = data_set_sq == "00" ? 800 : (data_set_sq == "02" ? 310 : (data_set_sq == "05" ? 10000 : 10000));
-        if(laser_cloud_frame_number == gt_bag_num)       //因为bag包会少录制几帧
+        if(laser_cloud_frame_number == data_set_frame_num - 1)       //因为bag包会少录制几帧
         {
             makeandsaveprcurve();
 
@@ -1273,7 +1251,7 @@ public:
         if(laser_cloud_frame_number == data_set_frame_num - 1)     
         {
             double precise = EvaluateLoopFrameF1(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
-            cout << "[SC]  Normal Distribute Perform Loop Closure    F1 core: " << precise << endl;
+            cout << "[SC]  Scan Context Perform Loop Closure    F1 core: " << precise << endl;
 
         }
 
@@ -1421,6 +1399,7 @@ public:
                     }else if(loop_id[i] == -1)
                     {
                         FN++;
+                        cout << "[ALL]  FN id: " << inquiry_id[i] << " corrent gt id: " << (*gt_it).second << endl;
                     }
                     
                     break;
@@ -1429,7 +1408,10 @@ public:
                 if(gt_it == loopclosure_gt_index.end() - 1)
                 {
                     if(loop_id[i] != -1)
+                    {
                         FP++;
+                        cout << "[ALL]  FP id: " << inquiry_id[i] << " error loop id: " << loop_id[i] << endl;
+                    }
                 }
             }
 
@@ -1485,7 +1467,7 @@ public:
                         // cout << endl << "inquiry id: " << inquiry_id[i] << " loop id: " << loop_id[i] << endl;
                         // cout << "loop translate: " << pose_ground_truth[loop_id[i]].col(3).transpose() << endl;
                         est_err = elmanager.EvaculateTFWithIso(pose_ground_truth[loop_id[i]], pose_ground_truth[inquiry_id[i]],transform_matrix[i]);
-                        cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate x: " << est_err.translation().x() << " pose error:  translate y: " << est_err.translation().y() << " rotate: " << std::atan2(est_err(1, 0), est_err(0, 0)) << endl;
+                        // cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate x: " << est_err.translation().x() << " pose error:  translate y: " << est_err.translation().y() << " rotate: " << std::atan2(est_err(1, 0), est_err(0, 0)) << endl;
                         // cout << "[ALL]  Transform Matrix Perform   current id: " << inquiry_id[i]  << " loop id: " << loop_id[i] << " pose error:  translate: " << pose_error_.first << " rotate: " << pose_error_.second << endl;
                         trans_errors.push_back(pose_error_);
                         est_tf_err.push_back(est_err);
@@ -1536,7 +1518,7 @@ public:
         avg_x /= tp;
         avg_y /= tp;
         avg_yaw /= tp;
-        cout << "," << avg_x << "," << avg_y << "," << avg_yaw << "," << endl;
+        cout << avg_x << "," << avg_y << "," << avg_yaw << "," << endl;
     }
 
     //评价旋转对齐角 传入查询id 对应的位置识别id 还有旋转量
@@ -1883,9 +1865,6 @@ int main(int argc, char** argv)
 
     // MO.testcode();
 
-    //建立数据库
-    // MO.MakeMapFeatureBase();
-
     //建立真值话题包
     // MO.GetGroundtrueFrame();
 
@@ -1899,7 +1878,9 @@ int main(int argc, char** argv)
     {
         std::string frame_idx = padZeros(point_cloud_cnt);
         pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
-        pcl::io::loadPCDFile<PointType>(MO.saveMapPCDDirectory + MO.data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud);     
+        pcl::io::loadPCDFile<PointType>(MO.saveMapPCDDirectory + MO.data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
+
+        //保存成ply格式    
 
         MO.laserCloudInfoHandlefromPCD(_rawcloud);
 

@@ -58,6 +58,28 @@ MatrixXd circshift( MatrixXd &_mat, int _num_shift )
 
 } // circshift
 
+MatrixXd ringshift( MatrixXd &_mat, int _num_shift )
+{
+    // shift columns to right direction 
+    // assert(_num_shift >= 0);
+
+    if( _num_shift == 0 )
+    {
+        MatrixXd shifted_mat( _mat );
+        return shifted_mat; // Early return 
+    }
+
+    MatrixXd shifted_mat = MatrixXd::Zero( _mat.rows(), _mat.cols() );
+    for ( int row_idx = 0; row_idx < _mat.rows(); row_idx++ )
+    {
+        int new_location = (row_idx + _num_shift + _mat.rows()) % _mat.rows();
+        shifted_mat.row(new_location) = _mat.row(row_idx);
+    }
+
+    return shifted_mat;
+
+} // circshift
+
 
 std::vector<float> eig2stdvec( MatrixXd _eigmat )
 {
@@ -232,22 +254,6 @@ const Eigen::MatrixXd& SCManager::getConstRefRecentSCD(void)
     return inquiry_polarcontexts_.back();
 }
 
-//弃用
-void SCManager::makeAndSaveDatabaseScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id)
-{
-    Eigen::MatrixXd sc = makeScancontext(_scan_down); // v1     //制作SC描述矩阵
-    Eigen::MatrixXd ringkey = makeRingkeyFromScancontext( sc ); //制作ring键值 每行平均值
-    Eigen::MatrixXd sectorkey = makeSectorkeyFromScancontext( sc ); //制作sector键值 每列平均值
-    std::vector<float> polarcontext_invkey_vec = eig2stdvec( ringkey ); //将ring键值传入vector容器(以数组的形式)
-
-    database_polarcontexts_.push_back( sc );     //保存描述矩阵
-
-    database_polarcontext_invkeys_mat_.push_back( polarcontext_invkey_vec ); //保存vector格式的ring键值
-    // database_gt_id.push_back(frame_id);
-
-    // cout << "[SC]  Make Save Database Scancontext Key   the key num: " << database_polarcontext_invkeys_mat_.size() << endl;
-
-} // SCManager::makeAndSaveDatabaseScancontextAndKeys
 
 
 void SCManager::makeAndSaveInquiryScancontextAndKeys( pcl::PointCloud<SCPointType> & _scan_down, int frame_id)
@@ -265,7 +271,7 @@ void SCManager::makeAndSaveInquiryScancontextAndKeys( pcl::PointCloud<SCPointTyp
 
     // cout << "[SC]  Make Save Inquiry Scancontext Key   the key num: " << inquiry_polarcontext_invkeys_mat_.size() << endl;
 
-} // SCManager::makeAndSaveDatabaseScancontextAndKeys
+}
 
 
 std::pair<int, float> SCManager::detectLoopClosureID ( void )
