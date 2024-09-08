@@ -5,25 +5,27 @@ import pandas as pd
 
 data_set_sq_1 = "00"
 data_set_sq_2 = "02"
+data_set_sq_3 = "05"
+data_set_sq_4 = "08"
 
 sc_a_name = 'base'
 sc_b_name = 'base'
 base_sq_a_name = 'base'
 base_sq_b_name = 'base'
-nd_a_name = 'ca_ve_transform_add-near-8-voxel_dist-2'
-nd_b_name = 'ca_ve_transform_dist-2'
+nd_a_name = 'avg-z'
+nd_b_name = 'avg-desc'
 mix_a_name = 'ca_num_ve-test_can-20'
-mix_b_name = 'ca_num_can-20'
+mix_b_name = 'ca-num'
 
  
 # 用Pandas读取csv格式的文件  
-sc_a = pd.read_csv('../../../data/LOAMSC/PRcurve/sc_kitti_' + data_set_sq_1 + '_' + sc_a_name + '.csv')
-sc_b = pd.read_csv('../../../data/LOAMSC/PRcurve/sc_kitti_' + data_set_sq_2 + '_' + sc_b_name + '.csv')
-base_a = pd.read_csv('../../../data/LOAMBASELINE/PRcurve/cc_kitti_' + data_set_sq_1 + '_' + base_sq_a_name + '.csv')
-base_b = pd.read_csv('../../../data/LOAMBASELINE/PRcurve/cc_kitti_' + data_set_sq_2 + '_' + base_sq_b_name + '.csv')
+sc_a = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_00_untitled.csv')
+sc_b = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_02_untitled.csv')
+base_a = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_05_untitled.csv')
+base_b = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_08_untitled.csv')
 # nd_a = pd.read_csv('../../../data/LOAMND/PRcurve/nd_kitti_' + data_set_sq_1 + '_' + nd_a_name + '.csv')
 # nd_b = pd.read_csv('../../../data/LOAMND/PRcurve/nd_kitti_' + data_set_sq_1 + '_' + nd_b_name + '.csv')
-# mix_a = pd.read_csv('../../../data/LOAMMIX/PRcurve/mix_kitti_' + data_set_sq + '_' + mix_a_name + '.csv')
+# mix_a = pd.read_csv('../../../data/LOAMMIX/PRcurve/mix_kitti_' + data_set_sq_1 + '_' + mix_a_name + '.csv')
 # mix_b = pd.read_csv('../../../data/LOAMMIX/PRcurve/mix_kitti_' + data_set_sq_1 + '_' + mix_b_name + '.csv')
 
 
@@ -52,12 +54,12 @@ fig = plt.figure()
 # 绘制累计频率曲线  
 plt.plot(sc_a_x,sc_a_y,'-r',linewidth = 1,label='SC_' + data_set_sq_1 + '_' + sc_a_name) 
 plt.plot(sc_b_x,sc_b_y,'-m',linewidth = 1,label='SC_' + data_set_sq_2 + '_' + sc_b_name) 
-plt.plot(base_a_x,base_a_y,'-b',linewidth = 1,label='CC_' + data_set_sq_1 + '_' + base_sq_a_name) 
-plt.plot(base_b_x,base_b_y,'-c',linewidth = 1,label='CC_' + data_set_sq_2 + '_' + base_sq_b_name) 
-# plt.plot(nd_a_x,nd_a_y,'-b',linewidth = 1,label='ND_' + nd_a_name) 
-# plt.plot(nd_b_x,nd_b_y,'-c',linewidth = 1,label='ND_' + nd_b_name)  
-# plt.plot(mix_a_x,mix_a_y,'-y',linewidth = 1,label='MIX_' + mix_a_name)  
-# plt.plot(mix_b_x,mix_b_y,'-g',linewidth = 1,label='MIX_' + mix_b_name)  
+plt.plot(base_a_x,base_a_y,'-b',linewidth = 1,label='SC_' + data_set_sq_3 + '_' + sc_b_name) 
+plt.plot(base_b_x,base_b_y,'-c',linewidth = 1,label='SC_' + data_set_sq_4 + '_' + sc_b_name) 
+# plt.plot(nd_a_x,nd_a_y,'-y',linewidth = 1,label='ND_' + data_set_sq_1 + '_' + nd_a_name) 
+# plt.plot(nd_b_x,nd_b_y,'-c',linewidth = 1,label='ND_' + data_set_sq_1 + '_' + nd_b_name)  
+# plt.plot(mix_a_x,mix_a_y,'-y',linewidth = 1,label='MIX_' + data_set_sq_1 + '_' + mix_a_name)  
+# plt.plot(mix_b_x,mix_b_y,'-g',linewidth = 1,label='MIX_' + data_set_sq_1 + '_' + mix_b_name)  
 
 # plt.plot(x, BB, '-g')   # 绿色实线 
  

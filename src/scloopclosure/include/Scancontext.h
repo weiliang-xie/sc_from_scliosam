@@ -92,7 +92,7 @@ public:
     const double PC_UNIT_RINGGAP = PC_MAX_RADIUS / double(PC_NUM_RING);                 //径向单元长度
 
     // tree
-    const int    NUM_EXCLUDE_RECENT = 50; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
+    const int    NUM_EXCLUDE_RECENT = 150; // simply just keyframe gap (related with loopClosureFrequency in yaml), but node position distance-based exclusion is ok.    排除时间上相近的关键帧 30
     const int    NUM_CANDIDATES_FROM_TREE = 20; // 10 is enough. (refer the IROS 18 paper)   //KD树的候选数量
 
     // loop thres
@@ -112,7 +112,7 @@ public:
     std::vector<Eigen::MatrixXd> polarcontext_invkeys_;
     std::vector<Eigen::MatrixXd> polarcontext_vkeys_;
     std::vector<int16_t> context_origin_index;  //制作描述符使用到的原始点云帧序号
-    std::vector<std::pair<int,double>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
+    std::vector<std::pair<std::pair<int,int>,float>> loopclosure_id_and_dist;  //SC制作保存的所有回环帧id和相似度距离
 
     KeyMat database_polarcontext_invkeys_mat_;   //float的容器的容器
     KeyMat inquiry_polarcontext_invkeys_mat_;   //float的容器的容器

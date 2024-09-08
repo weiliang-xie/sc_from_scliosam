@@ -345,7 +345,8 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     // t_calc_dist.toc("Distance calc");
 
     //储存回环帧的id和相似度距离
-    std::pair<int,float> data{(inquiry_polarcontexts_.size() - 1),min_dist};
+    std::pair<std::pair<int,int>,float> data{{(inquiry_polarcontexts_.size() - 1), nn_idx}, min_dist};
+
     loopclosure_id_and_dist.push_back(data);
 
     /* 

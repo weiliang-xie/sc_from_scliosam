@@ -171,7 +171,7 @@ public:
     std::string MIXsaveNodePCDDirectory;
 
     //xwl 修改添加
-    string data_set_sq = "00";
+    string data_set_sq = "08";
     int16_t data_set_frame_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
     int16_t laser_cloud_frame_number;   //实时更新的当前帧序号，在原始的数据bag包中 = 帧id
     int16_t eld_laser_cloud_frame_number;   //实时更新的当前帧id（转换后） 用于真值数据bag包
@@ -183,8 +183,8 @@ public:
     std::vector<std::pair<int, int> > loopclosure_gt_index;  //回环真值id队列  first是当前回环帧，second是历史匹配帧
     ofstream prFile;                                                    //pr文件流定义
     ofstream File;                                                      //通用保存文件流定义
-    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_center.csv";    //SC pr数据储存地址
-    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_center.csv";    //ND pr数据储存地址
+    string sc_pr_data_file = savePCDDirectory + "SC/PRcurve/sc_kitti_" + data_set_sq + "_untitled.csv";    //SC pr数据储存地址
+    string nd_pr_data_file = savePCDDirectory + "ND/PRcurve/nd_kitti_" + data_set_sq + "_untitled.csv";    //ND pr数据储存地址
     string mix_pr_data_file = savePCDDirectory + "MIX/PRcurve/mix_kitti_" + data_set_sq + "_ca_num_ve-test_can-20.csv";    //MIX pr数据储存地址
     //计算平移向量验证
     std::vector<std::pair<double,double> > error_arry;
@@ -774,7 +774,7 @@ public:
             cur_y = pose_ground_truth[i](2,3);
 
 
-            for(int j = 0; j < cur_index - 50; j++)
+            for(int j = 0; j < cur_index - 150; j++)
             {
                 double his_x, his_y;
                 his_x = pose_ground_truth[j](0,3);
@@ -800,12 +800,12 @@ public:
         cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
 
         // 打印真值ID
-        for(auto &gt_data : loopclosure_gt_index)
-        {
-            cout << "cur id: " << gt_data.first << "  his id: " << gt_data.second << endl;
-        }
-        cout <<endl;
-        cout << "finish get loop closure gt" << endl;
+        // for(auto &gt_data : loopclosure_gt_index)
+        // {
+            // cout << "cur id: " << gt_data.first << "  his id: " << gt_data.second << endl;
+        // }
+        // cout <<endl;
+        // cout << "finish get loop closure gt" << endl;
 
     }
 
@@ -815,7 +815,7 @@ public:
     /*回环PR计算
       输入： 预测点云帧id和最小距离
       输出： PR值*/
-    std::vector<std::pair<double,double>> makeprcurvedata(std::vector<std::pair<int,double>> & loopclosure_id_and_dist)
+    std::vector<std::pair<double,double>> makeprcurvedata(std::vector<std::pair<std::pair<int,int>,float>> & loopclosure_id_and_dist)
     {
         std::vector<std::pair<double,double>> pr_data_queue;
         int tp,fp,fn,pre_loop_num;
@@ -843,6 +843,7 @@ public:
         cout << "min distance is: " << min_dist << "    max distance is: " << max_dist <<endl;
 
         //将dist划分出50个阈值
+        double max_f1 = 0;
         for(value = min_dist + (max_dist-min_dist)/50; value <= max_dist; value += (max_dist-min_dist)/50)
         {
             cout << "value is: " << value << endl;
@@ -851,10 +852,20 @@ public:
                 if(pre_pair.second <= value || value == 1)
                 {
                     pre_loop_num++;
+                    //计算查询与候选帧的真实距离
+                    double his_x, his_y, cur_x, cur_y;
+                    his_x = pose_ground_truth[pre_pair.first.first](0,3);
+                    his_y = pose_ground_truth[pre_pair.first.first](2,3);
+
+                    cur_x = pose_ground_truth[pre_pair.first.second](0,3);
+                    cur_y = pose_ground_truth[pre_pair.first.second](2,3);
+
+                    double distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));
                     // cout << "pre_pair_index: " << pre_pair.first << " is loop frame" << endl;
                     for(auto gt_it = loopclosure_gt_index.begin(); gt_it != loopclosure_gt_index.end(); ++gt_it)
                     {
-                        if((*gt_it).first == pre_pair.first)
+
+                        if((*gt_it).first == pre_pair.first.first && distance <= 5.0)
                         {
                             tp++;
                             break;
@@ -882,13 +893,15 @@ public:
             pr_data_queue.push_back(pr_data);
 
             cout << "precision: " << precision << "   recall: " << recall << " f1: " << f1 << endl;
+            if (f1 > max_f1)
+                max_f1 = f1;
 
         }
             cout << "all cloud frame num:   " << laser_cloud_frame_number + 1 << endl;
             cout << "loop closure gt num:   " << loopclosure_gt_index.size() << endl; 
+            cout << "Max F1: " << max_f1 << endl;
 
         return pr_data_queue;
-
     }
 
     //PR曲线保存函数
@@ -934,18 +947,18 @@ public:
 
         if(scManager.loopclosure_id_and_dist.empty() != 1)
             sc_pr_data_queue = makeprcurvedata(scManager.loopclosure_id_and_dist);
-        if(ndManager.loopclosure_id_and_dist.empty() != 1)
-            nd_pr_data_queue = makeprcurvedata(ndManager.loopclosure_id_and_dist);
-        if(mixManager.loopclosure_id_and_dist.empty() != 1)
-            mix_pr_data_queue = makeprcurvedata(mixManager.loopclosure_id_and_dist);
+        // if(ndManager.loopclosure_id_and_dist.empty() != 1)
+            // nd_pr_data_queue = makeprcurvedata(ndManager.loopclosure_id_and_dist);
+        // if(mixManager.loopclosure_id_and_dist.empty() != 1)
+            // mix_pr_data_queue = makeprcurvedata(mixManager.loopclosure_id_and_dist);
 
 
         saveprcurvedata(sc_pr_data_file, sc_pr_data_queue);
         cout << "[Make save pr]     finish making and saving SC pr! num is: " << scManager.loopclosure_id_and_dist.size() << endl;
-        saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
-        cout << "[Make save pr]     finish making and saving ND pr! num is: " << ndManager.loopclosure_id_and_dist.size() << endl;
-        saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
-        cout << "[Make save pr]     finish making and saving MIX pr! num is: " << mixManager.loopclosure_id_and_dist.size() << endl;
+    //     saveprcurvedata(nd_pr_data_file, nd_pr_data_queue);
+    //     cout << "[Make save pr]     finish making and saving ND pr! num is: " << ndManager.loopclosure_id_and_dist.size() << endl;
+    //     saveprcurvedata(mix_pr_data_file, mix_pr_data_queue);
+    //     cout << "[Make save pr]     finish making and saving MIX pr! num is: " << mixManager.loopclosure_id_and_dist.size() << endl;
     }
 
     //更新路径
@@ -1027,7 +1040,7 @@ public:
 
             SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
-            NDsaveKeyFramesAndFactor();     //制作ND描述符
+            // NDsaveKeyFramesAndFactor();     //制作ND描述符
 
             // MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
@@ -1035,7 +1048,7 @@ public:
 
             performSCLoopClosure();      //求解SC回环状态
 
-            NDperformSCLoopClosure();      //求解ND回环状态
+            // NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 
@@ -1854,6 +1867,33 @@ public:
             pubPath.publish(globalPath);
         }
     }
+
+    //读取bin文件
+    void loadBinFile(const std::string &bin_file_path, pcl::PointCloud<PointType>::Ptr cloud) {
+        std::ifstream input(bin_file_path, std::ios::binary);  // 以二进制方式打开文件
+        if (!input.good()) {
+            std::cerr << "Could not open file: " << bin_file_path << std::endl;
+            return;
+        }
+
+        input.seekg(0, std::ios::end);  // 定位到文件末尾以获取文件大小
+        size_t file_size = input.tellg();
+        input.seekg(0, std::ios::beg);  // 重置文件指针到文件开头
+
+        size_t num_points = file_size / (sizeof(float) * 4);  // 计算点的数量，每个点有4个float数据
+        cloud->resize(num_points);  // 调整点云大小以容纳所有点
+
+        for (size_t i = 0; i < num_points; ++i) {
+            PointType point;
+            input.read(reinterpret_cast<char *>(&point.x), sizeof(float));  // 读取 x
+            input.read(reinterpret_cast<char *>(&point.y), sizeof(float));  // 读取 y
+            input.read(reinterpret_cast<char *>(&point.z), sizeof(float));  // 读取 z
+            input.read(reinterpret_cast<char *>(&point.intensity), sizeof(float));  // 读取强度
+            cloud->points[i] = point;
+        }
+
+        input.close();  // 关闭文件
+    }
 };
 
 
@@ -1878,7 +1918,10 @@ int main(int argc, char** argv)
     {
         std::string frame_idx = padZeros(point_cloud_cnt);
         pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
-        pcl::io::loadPCDFile<PointType>(MO.saveMapPCDDirectory + MO.data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
+        // pcl::io::loadPCDFile<PointType>(MO.saveMapPCDDirectory + MO.data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
+        std::string kitti_lidar_path = "/home/jtcx/data_set/kitti/data_odometry_velodyne/sequences/";
+
+        MO.loadBinFile(kitti_lidar_path + MO.data_set_sq + "/velodyne/" + frame_idx + ".bin", _rawcloud); 
 
         //保存成ply格式    
 
