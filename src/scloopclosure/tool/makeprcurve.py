@@ -7,6 +7,7 @@ data_set_sq_1 = "00"
 data_set_sq_2 = "02"
 data_set_sq_3 = "05"
 data_set_sq_4 = "08"
+data_set_sq_5 = "k1"
 
 sc_a_name = 'base'
 sc_b_name = 'base'
@@ -23,7 +24,7 @@ sc_a = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/
 sc_b = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_02_untitled.csv')
 base_a = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_05_untitled.csv')
 base_b = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_08_untitled.csv')
-# nd_a = pd.read_csv('../../../data/LOAMND/PRcurve/nd_kitti_' + data_set_sq_1 + '_' + nd_a_name + '.csv')
+nd_a = pd.read_csv('/home/jtcx/remote_control/code/sc_from_scliosam/data/LOAMSC/PRcurve/sc_kitti_kaist01_untitled.csv')
 # nd_b = pd.read_csv('../../../data/LOAMND/PRcurve/nd_kitti_' + data_set_sq_1 + '_' + nd_b_name + '.csv')
 # mix_a = pd.read_csv('../../../data/LOAMMIX/PRcurve/mix_kitti_' + data_set_sq_1 + '_' + mix_a_name + '.csv')
 # mix_b = pd.read_csv('../../../data/LOAMMIX/PRcurve/mix_kitti_' + data_set_sq_1 + '_' + mix_b_name + '.csv')
@@ -39,8 +40,8 @@ base_a_x = base_a['recall']
 base_a_y = base_a['precision']   
 base_b_x = base_b['recall']  
 base_b_y = base_b['precision']
-# nd_a_x = nd_a['recall']
-# nd_a_y = nd_a['precision']   
+nd_a_x = nd_a['recall']
+nd_a_y = nd_a['precision']   
 # nd_b_x = nd_b['recall']
 # nd_b_y = nd_b['precision'] 
 # mix_a_x = mix_a['recall']
@@ -56,7 +57,7 @@ plt.plot(sc_a_x,sc_a_y,'-r',linewidth = 1,label='SC_' + data_set_sq_1 + '_' + sc
 plt.plot(sc_b_x,sc_b_y,'-m',linewidth = 1,label='SC_' + data_set_sq_2 + '_' + sc_b_name) 
 plt.plot(base_a_x,base_a_y,'-b',linewidth = 1,label='SC_' + data_set_sq_3 + '_' + sc_b_name) 
 plt.plot(base_b_x,base_b_y,'-c',linewidth = 1,label='SC_' + data_set_sq_4 + '_' + sc_b_name) 
-# plt.plot(nd_a_x,nd_a_y,'-y',linewidth = 1,label='ND_' + data_set_sq_1 + '_' + nd_a_name) 
+plt.plot(nd_a_x,nd_a_y,'-y',linewidth = 1,label='SC_' + data_set_sq_5 + '_' + sc_b_name) 
 # plt.plot(nd_b_x,nd_b_y,'-c',linewidth = 1,label='ND_' + data_set_sq_1 + '_' + nd_b_name)  
 # plt.plot(mix_a_x,mix_a_y,'-y',linewidth = 1,label='MIX_' + data_set_sq_1 + '_' + mix_a_name)  
 # plt.plot(mix_b_x,mix_b_y,'-g',linewidth = 1,label='MIX_' + data_set_sq_1 + '_' + mix_b_name)  

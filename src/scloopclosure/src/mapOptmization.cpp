@@ -171,8 +171,10 @@ public:
     std::string MIXsaveNodePCDDirectory;
 
     //xwl 修改添加
-    string data_set_sq = "08";
-    int16_t data_set_frame_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
+    // string data_set_sq = "08";
+    // int16_t data_set_frame_num = data_set_sq == "00" ? 4541 : (data_set_sq == "02" ? 4661 : (data_set_sq == "05" ? 2761 : 4071));
+    string data_set_sq = "rs02";
+    int16_t data_set_frame_num = data_set_sq == "kaist01" ? 8034 : 3128;
     int16_t laser_cloud_frame_number;   //实时更新的当前帧序号，在原始的数据bag包中 = 帧id
     int16_t eld_laser_cloud_frame_number;   //实时更新的当前帧id（转换后） 用于真值数据bag包
     Eigen::MatrixXd sc_pose_origin;
@@ -265,7 +267,8 @@ public:
 
         laser_cloud_frame_number = -1;
 
-        getposegroundtruth();   //获取序列的pose真值
+        // getposegroundtruth();   //获取序列的pose真值 kitti
+        pose_ground_truth = loadMatrices("/home/jtcx/ws/src/contour-context/sample_data/mulran_to_kitti/ts-sens_pose-" + data_set_sq + ".txt");
         getloopclosuregt();     //获取回环真值
 
         ndManager.pose_ground_truth_copy.assign(pose_ground_truth.begin(),pose_ground_truth.end());
@@ -763,7 +766,12 @@ public:
         {
             int cur_index = i;
             // cout << "cur index: " << cur_index << endl;
-            if(cur_index < 50) continue;  //前50帧不进行回环判断
+            if(cur_index < 150) 
+            {
+                std::pair<int, int> gt_id =  {-1, -1};
+                loopclosure_gt_index.push_back(gt_id);                   
+                continue;  //前50帧不进行回环判断
+            }
             Eigen::Matrix4d pose_matrix;
             double min_distance = 10000000;
             double loop_id = 0;
@@ -796,6 +804,11 @@ public:
                 std::pair<int, int> gt_id =  {cur_index, loop_id};
                 loopclosure_gt_index.push_back(gt_id); 
             }
+            else{
+                std::pair<int, int> gt_id =  {-1, -1};
+                loopclosure_gt_index.push_back(gt_id);                 
+            }
+
         }
         cout << "loop closure num: " << loopclosure_gt_index.size() << endl;
 
@@ -814,7 +827,7 @@ public:
 
     /*回环PR计算
       输入： 预测点云帧id和最小距离
-      输出： PR值*/
+      输出： PR值 弃用*/
     std::vector<std::pair<double,double>> makeprcurvedata(std::vector<std::pair<std::pair<int,int>,float>> & loopclosure_id_and_dist)
     {
         std::vector<std::pair<double,double>> pr_data_queue;
@@ -844,7 +857,7 @@ public:
 
         //将dist划分出50个阈值
         double max_f1 = 0;
-        for(value = min_dist + (max_dist-min_dist)/50; value <= max_dist; value += (max_dist-min_dist)/50)
+        for(value = min_dist + (max_dist-min_dist)/(int(loopclosure_id_and_dist.size())/2); value <= max_dist; value += (max_dist-min_dist)/(int(loopclosure_id_and_dist.size())/2))
         {
             cout << "value is: " << value << endl;
             for(auto pre_pair : loopclosure_id_and_dist)
@@ -1060,7 +1073,10 @@ public:
         //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
         if(laser_cloud_frame_number == data_set_frame_num - 1)       //因为bag包会少录制几帧
         {
-            makeandsaveprcurve();
+            // std::string save_path = "/home/jtcx/remote_control/code/STD/result/outcome/SC/outcome-sc-kitti" + data_set_sq + ".txt";
+            std::string save_path = "/home/jtcx/remote_control/code/STD/result/outcome/SC/outcome-sc-mulran" + data_set_sq + ".txt";
+            savePredictionResults(save_path);
+            // makeandsaveprcurve();
 
             // string name_cos = "cos_error";
             // string name_dist = "cos_error";
@@ -1111,7 +1127,7 @@ public:
 
             SCsaveKeyFramesAndFactor();   //制作SC描述符并更新位姿信息
 
-            NDsaveKeyFramesAndFactor();     //制作ND描述符
+            // NDsaveKeyFramesAndFactor();     //制作ND描述符
 
             // MIXsaveKeyFramesAndFactor();    //制作MIX描述符
 
@@ -1119,13 +1135,13 @@ public:
 
             performSCLoopClosure();      //求解SC回环状态
 
-            NDperformSCLoopClosure();      //求解ND回环状态
+            // NDperformSCLoopClosure();      //求解ND回环状态
 
             // MIXperformSCLoopClosure();      //求解MIX回环状态
 
             // EloidperformLoopClosure();           //求解eloid的回环状态
 
-            publishFrames();             //发布路径
+            // publishFrames();             //发布路径
 
         }
 
@@ -1136,7 +1152,8 @@ public:
         //接收完数据后进行pr计算    仅限于kitti数据集的00 02 05 08
         if(laser_cloud_frame_number == data_set_frame_num - 1)       //因为bag包会少录制几帧
         {
-            makeandsaveprcurve();
+
+            // makeandsaveprcurve();
 
             // string name_cos = "cos_error";
             // string name_dist = "cos_error";
@@ -1252,21 +1269,24 @@ public:
 
         // find keys
         // cout << "   xwl enter perform sc loop closure" << endl;
-
         auto detectResult = scManager.detectLoopClosureID(); // first: nn index, second: yaw diff 
         int loopKeyCur = laser_cloud_frame_number;   //获取当前获取的实时帧id  变量失效
         int loopKeyPre = detectResult.first;                //获取存在回环的历史帧的id 若不存在则返回-1
-        float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
+        float score = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...) 换成相似度
 
-        scManager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
-        scManager.evaluate_data.loop_id.push_back(detectResult.first);
+        // scManager.evaluate_data.inquiry_id.push_back(laser_cloud_frame_number);
+        // scManager.evaluate_data.loop_id.push_back(detectResult.first);
 
-        if(laser_cloud_frame_number == data_set_frame_num - 1)     
-        {
-            double precise = EvaluateLoopFrameF1(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
-            cout << "[SC]  Scan Context Perform Loop Closure    F1 core: " << precise << endl;
+        PredictionOutcome cur = getevaluatedata(loopKeyPre, loopKeyCur, score);
 
-        }
+        eva_data.push_back(cur);
+    
+        // if(laser_cloud_frame_number == data_set_frame_num - 1)     
+        // {
+        //     double precise = EvaluateLoopFrameF1(scManager.evaluate_data.inquiry_id, scManager.evaluate_data.loop_id);
+        //     cout << "[SC]  Scan Context Perform Loop Closure    F1 core: " << precise << endl;
+
+        // }
 
     } // performSCLoopClosure
 
@@ -1705,7 +1725,6 @@ public:
     {
         if (saveFrame() == false)   //判断是否满足保存关键帧的要求
             return;
-
         const SCInputType sc_input_type = SCInputType::SINGLE_SCAN_FULL; // change this 
 
         //这里对输入类型进行判断后分类处理，但目前已经将分类条件写死了
@@ -1894,6 +1913,192 @@ public:
 
         input.close();  // 关闭文件
     }
+
+    template<typename PointType>
+    typename pcl::PointCloud<PointType>::Ptr readKITTIPointCloudBin(const std::string &lidar_bin_path) {
+      typename pcl::PointCloud<PointType>::Ptr out_ptr = nullptr;
+
+      // allocate 4 MB buffer (only ~130*4*4 KB are needed)
+      int num = 1000000;
+      auto *data = (float *) malloc(num * sizeof(float));
+      // pointers
+      float *px = data + 0;
+      float *py = data + 1;
+      float *pz = data + 2;
+      float *pr = data + 3;
+
+      FILE *stream;
+      stream = fopen(lidar_bin_path.c_str(), "rb");
+      if (stream) {
+        num = fread(data, sizeof(float), num, stream) / 4;
+        out_ptr.reset(new pcl::PointCloud<PointType>());
+        out_ptr->reserve(num);
+        for (int32_t i = 0; i < num; i++) {
+          PointType pt;
+          pt.x = *px;
+          pt.y = *py;
+          pt.z = *pz;
+          out_ptr->push_back(pt);
+
+          px += 4;
+          py += 4;
+          pz += 4;
+          pr += 4;
+        }
+        fclose(stream);
+
+      } else {
+        printf("Lidar bin file %s does not exist.\n", lidar_bin_path.c_str());
+        exit(-1);
+      }
+      free(data);
+      return out_ptr;
+    }
+
+    vector<Eigen::Matrix4d> loadMatrices(const string& file_path) {
+        vector<Eigen::Matrix4d> matrices;
+        ifstream file(file_path);
+
+        if (!file.is_open()) {
+            cerr << "Error opening file: " << file_path << endl;
+            return matrices;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            stringstream ss(line);
+            double timestamp; // Read the timestamp (first column)
+            ss >> timestamp;
+
+            Eigen::Matrix4d mat = Eigen::Matrix4d::Identity(); // Initialize as identity matrix
+
+            // Read 3x4 matrix elements from columns 2 to 13
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    ss >> mat(i, j); // Fill the matrix
+                }
+            }
+
+            matrices.push_back(mat);
+        }
+
+        // for (size_t i = 0; i < matrices.size(); ++i) {
+        //     cout << "Matrix " << i + 1 << ":\n" << matrices[i] << endl;
+        // }
+        file.close();
+
+
+        return matrices;
+    }
+
+    string getFilePathByIndex(const string& file_path, int index) {
+        ifstream file(file_path);
+        if (!file.is_open()) {
+            cerr << "Error opening file: " << file_path << endl;
+            return "";
+        }
+
+        string line;
+        while (getline(file, line)) {
+            stringstream ss(line);
+            double timestamp;
+            int current_index;
+            string path;
+
+            // Read the line into timestamp, index, and path
+            ss >> timestamp >> current_index >> path;
+
+            // Check if the current index matches the input index
+            if (current_index == index) {
+                return path;  // Return the file path
+            }
+        }
+
+        file.close();
+        cerr << "Index " << index << " not found in file." << endl;
+        return "";
+    }
+    struct PredictionOutcome {
+      enum Res {
+        TP, FP, TN, FN
+      };
+
+      int id_src = -1;  //
+      int id_tgt = -1;
+      Res tfpn = Res::TN; // the most insignificant type
+      double est_err[3]{};  // TP, FP: the error param on SE2, else: all zero
+      double correlation{};
+    };
+
+    std::vector<PredictionOutcome> eva_data;
+
+    PredictionOutcome getevaluatedata(int src_idx, int tgt_idx, float score)
+    {
+        PredictionOutcome cur_eva;
+        if(src_idx != -1)
+        {
+            double his_x, his_y, cur_x, cur_y;
+            his_x = pose_ground_truth[tgt_idx](0,3);
+            his_y = pose_ground_truth[tgt_idx](2,3);
+            cur_x = pose_ground_truth[src_idx](0,3);
+            cur_y = pose_ground_truth[src_idx](2,3);
+            double distance = sqrt((his_x-cur_x)*(his_x-cur_x) + (his_y-cur_y)*(his_y-cur_y));        
+            if(loopclosure_gt_index[tgt_idx].first != -1 && distance < 5.0)
+            {
+                cur_eva.tfpn = PredictionOutcome::Res::TP;
+            }else{
+                cur_eva.tfpn = PredictionOutcome::Res::FP;
+            }
+        }else{
+            if(loopclosure_gt_index[tgt_idx].first != -1)
+            {
+                cur_eva.tfpn = PredictionOutcome::Res::FN;
+            }else{
+                cur_eva.tfpn = PredictionOutcome::Res::TN;
+            }
+        }
+        if(score == 0)
+            cur_eva.correlation = score;
+        else 
+            cur_eva.correlation = 1 - score;
+        cur_eva.id_src = src_idx;
+        cur_eva.id_tgt = tgt_idx;
+
+        return cur_eva; 
+    }
+
+    void savePredictionResults(const std::string &sav_path) const {
+        std::fstream res_file(sav_path, std::ios::out);
+
+        if (res_file.rdstate() != std::ifstream::goodbit) {
+          std::cerr << "Error opening " << sav_path << std::endl;
+          return;
+        }
+
+        // tgt before src
+        for (const auto &rec: eva_data) {
+
+          res_file << rec.tfpn << "\t";
+
+          if (rec.id_src < 0) {
+            res_file << rec.id_tgt << "-x" << "\t";
+          } else {
+
+            res_file << rec.id_tgt << "-" << rec.id_src << "\t";
+          }
+
+          res_file << rec.correlation << "\n";
+
+//          // case 1: path
+//          res_file << str_rep_tgt << "\t" << str_rep_src << "\n"; // may be too long
+        }
+        // rmse and mean error can be calculated from this file. So we will not record it
+
+
+        res_file.close();
+        printf("Outcome saved successfully.\n");
+    }
+
 };
 
 
@@ -1919,9 +2124,11 @@ int main(int argc, char** argv)
         std::string frame_idx = padZeros(point_cloud_cnt);
         pcl::PointCloud<PointType>::Ptr _rawcloud(new pcl::PointCloud<PointType>());
         // pcl::io::loadPCDFile<PointType>(MO.saveMapPCDDirectory + MO.data_set_sq + "/" + frame_idx + ".pcd", *_rawcloud); 
-        std::string kitti_lidar_path = "/home/jtcx/data_set/kitti/data_odometry_velodyne/sequences/";
+        // std::string kitti_lidar_path = "/home/jtcx/data_set/kitti/data_odometry_velodyne/sequences/";
+        std::string mulran_lidar_path = MO.getFilePathByIndex("/home/jtcx/ws/src/contour-context/sample_data/mulran_to_kitti/ts-lidar_bins-" + MO.data_set_sq + ".txt", point_cloud_cnt);
 
-        MO.loadBinFile(kitti_lidar_path + MO.data_set_sq + "/velodyne/" + frame_idx + ".bin", _rawcloud); 
+        // MO.loadBinFile(kitti_lidar_path + MO.data_set_sq + "/velodyne/" + frame_idx + ".bin", _rawcloud); 
+        _rawcloud = MO.readKITTIPointCloudBin<PointType>(mulran_lidar_path);
 
         //保存成ply格式    
 

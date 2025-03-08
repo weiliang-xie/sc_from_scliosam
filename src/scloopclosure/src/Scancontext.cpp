@@ -352,12 +352,14 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     /* 
      * loop threshold check
      */
+    float score = 0;
     if( min_dist < SC_DIST_THRES )  //是否达到回环阈值判断
     {
         loop_id = nn_idx; 
         std::cout.precision(3); 
         cout << "[SC]  [Loop found] Nearest distance: " << min_dist << " btn " << inquiry_polarcontexts_.size() - 1 << " and " << nn_idx << "." << endl;
         // cout << "  [Loop found] yaw diff: " << nn_align * PC_UNIT_SECTORANGLE << " deg." << endl;
+        score = min_dist;
     }
     // // else
     // {
@@ -368,7 +370,7 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
 
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * PC_UNIT_SECTORANGLE);
-    std::pair<int, float> result {loop_id, yaw_diff_rad};   //返回达到回环阈值的描述符id和旋转角度
+    std::pair<int, float> result {loop_id, score};   //返回达到回环阈值的描述符id和旋转角度
 
     return result;
 

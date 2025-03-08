@@ -3,8 +3,8 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-# 读取点云数据
-pointcloud = o3d.io.read_point_cloud("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/002348.pcd")
+# 读取点云数据 2348
+pointcloud = o3d.io.read_point_cloud("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/001177.pcd")
 
 # 将点云转换为numpy数组
 points = np.asarray(pointcloud.points)
@@ -12,7 +12,7 @@ points = np.asarray(pointcloud.points)
 # 根据Z值去除离群点
 z_values = points[:, 2]  # 获取所有点的Z值
 z_mean = np.mean(z_values)  # 计算Z值的均值
-z_std = np.std(z_values)    # 计算Z值的标准差
+z_std = np.std(z_values)    # 计算Z值的标准差wodia
 
 # 定义离群点的过滤范围
 z_threshold = 2.0  # 设置标准差的倍数

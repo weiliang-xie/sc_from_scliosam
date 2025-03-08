@@ -59,10 +59,10 @@ def create_cylinder_outline(radius, min_height, max_height, ring,resolution=20):
 
     return lineset
 
-
+# 4450-2(ok) 4446-0 1568-121 1559-113 
 pointcloud = o3d.io.read_point_cloud("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/000000.pcd")
 points = np.asarray(pointcloud.points)
-pointcloud_cp = o3d.io.read_point_cloud("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/004438.pcd")
+pointcloud_cp = o3d.io.read_point_cloud("/home/jtcx/remote_control/code/sc_from_scliosam/data/Scans_test/004446.pcd")
 points_cp = np.asarray(pointcloud_cp.points)
 
 vis = o3d.visualization.Visualizer()
@@ -87,7 +87,7 @@ aabb = pcd.get_axis_aligned_bounding_box()      #获取轴对称边界框
 
 
 #建立圆环体素结构
-cylinder_outline = create_cylinder_outline(radius = 80, min_height = -4, max_height = aabb.get_max_bound()[2], ring = 16, resolution = 40)
+cylinder_outline = create_cylinder_outline(radius = 80, min_height = -4, max_height = aabb.get_max_bound()[2], ring = 10, resolution = 40)
 
 vis.add_geometry(cylinder_outline)
 vis.add_geometry(pcd)           #添加点云

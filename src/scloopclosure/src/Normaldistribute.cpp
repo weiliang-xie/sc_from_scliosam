@@ -111,7 +111,7 @@ std::pair<MatrixXd, MatrixXd> NDManager::NDmakeScancontext(pcl::PointCloud<SCPoi
             sector_idx++;
             class Voxel_Ellipsoid bin_eloid;
             if(bin_it.size()){           
-                // std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
+                std::pair<Eigen::MatrixXd,Eigen::MatrixXd> bin_mean_cov_;
                 bin_eloid.point_num = bin_it.size();
                 Eigen::Vector3d center_ = {0,0,0};
 
@@ -146,19 +146,19 @@ std::pair<MatrixXd, MatrixXd> NDManager::NDmakeScancontext(pcl::PointCloud<SCPoi
 
                 // cout << "[ND]   [make discriptor]  bin distribute data: " << bin_eloid.pt_distri << endl;
 
-                // bin_mean_cov_ = NDGetCovarMatrix(bin_it);
+                bin_mean_cov_ = NDGetCovarMatrix(bin_it);
 
                 //构建点云的体素椭球
-                // std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
+                std::pair<std::vector<double>,Eigen::MatrixXd> bin_eigen_;
                 //均值填充
                 // bin_eloid.center.x = bin_mean_cov_.first(0,0);
                 // bin_eloid.center.y = bin_mean_cov_.first(0,1);
                 // bin_eloid.center.z = bin_mean_cov_.first(0,2);
-                // bin_eloid.cov = bin_mean_cov_.second;
+                bin_eloid.cov = bin_mean_cov_.second;
                 bin_eloid.num = bin_it.size();
 
-                // bin_eigen_ = NDGetEigenvalues(bin_eloid.cov);
-                // bin_eloid.axis_length = bin_eigen_.first;
+                bin_eigen_ = NDGetEigenvalues(bin_eloid.cov);
+                bin_eloid.axis_length = bin_eigen_.first;
                 // bin_eloid.axis = bin_eigen_.second;
 
                 //测试 最大高度
@@ -177,21 +177,21 @@ std::pair<MatrixXd, MatrixXd> NDManager::NDmakeScancontext(pcl::PointCloud<SCPoi
                     //体素椭球为无效模型 筛选小于一定数量的椭球
                     // bin_it.clear();
                     //不够点云数， 填入最高的高度值
-                    desc(ring_idx,sector_idx) = bin_eloid.max_high_z;
+                    // desc(ring_idx,sector_idx) = bin_eloid.max_high_z;
                 }else{   
 
-                    // //计算椭球扁平程度
-                    // double flat_ratio = 0;
-                    // if(bin_eloid.axis_length.size() != 3){
-                    //     cout << "The singular value is error !!!" << endl;
-                    // }else{
-                    //     if(bin_eloid.axis_length[2] != 0)
-                    //         flat_ratio = bin_eloid.axis_length[2] / bin_eloid.axis_length[0];
-                    //     else flat_ratio = 0;
-                    // }
+                    //计算椭球扁平程度
+                    double flat_ratio = 0;
+                    if(bin_eloid.axis_length.size() != 3){
+                        cout << "The singular value is error !!!" << endl;
+                    }else{
+                        if(bin_eloid.axis_length[2] != 0)
+                            flat_ratio = bin_eloid.axis_length[2] / bin_eloid.axis_length[0];
+                        else flat_ratio = 0;
+                    }
 
                     //填充描述矩阵
-                    desc(ring_idx,sector_idx) = bin_eloid.max_high_z;
+                    desc(ring_idx,sector_idx) = flat_ratio;
                     // desc(ring_idx,sector_idx) = atan2(double(bin_eloid.center.z), double((ring_idx+1) * ND_PC_UNIT_RINGGAP)) * 100;
 
 
@@ -229,6 +229,19 @@ std::pair<MatrixXd, MatrixXd> NDManager::NDmakeScancontext(pcl::PointCloud<SCPoi
     // cout << "[ND]  finish make ND descriptor" << endl;
 
     // t_making_desc.toc("PolarContext making");
+
+    //测试 列临值求平均
+    Eigen::MatrixXd avg_desc = MatrixXd::Zero(ND_PC_NUM_RING, ND_PC_NUM_SECTOR);
+    for(int i = 1; i < ND_PC_NUM_RING - 1; i++)
+    {
+        for(int j = 0; j < ND_PC_NUM_SECTOR; j++)
+        {
+            avg_desc(i,j) = (desc(i-1,j) + desc(i,j) + desc(i+1,j)) / 3;
+        }
+    }
+    avg_desc.row(0) = desc.row(0);
+    avg_desc.row(ND_PC_NUM_RING - 1) = desc.row(ND_PC_NUM_RING - 1);
+
     // 打印矩阵
     // cout <<"[ND] [make descriptor] distribute matrix: " << endl;
     // cout << desc.cast<float>() << endl;
@@ -580,7 +593,7 @@ std::pair<int, float> NDManager::NDdetectLoopClosureID ( void )
 
     // To do: return also nn_align (i.e., yaw diff)
     float yaw_diff_rad = deg2rad(nn_align * ND_PC_UNIT_SECTORANGLE);
-    std::pair<int, float> result {loop_id, yaw_diff_rad};   //返回达到回环阈值的描述符id和旋转角度
+    std::pair<int, float> result {loop_id, min_dist};   //返回达到回环阈值的描述符id和相似度
 
     step_timecost[3] += t_calc_dist.toc();
 
